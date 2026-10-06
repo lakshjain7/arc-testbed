@@ -9,7 +9,7 @@ PF="$ARC_DATA/logs/viewer.pid"
 # A cluster made by setup/setup-cluster.sh publishes Prometheus on $PROM_PORT by itself. If it does not
 # answer (older cluster), fall back to a port-forward.
 if ! curl -s -m 3 -o /dev/null "$PROM_URL/-/ready"; then
-  nohup kubectl --context "$KCTX" -n monitoring port-forward svc/prometheus "$PROM_PORT:9090" >"$ARC_DATA/logs/prom-forward.log" 2>&1 &
+  nohup kubectl --context "$KCTX" -n kube-system port-forward svc/prometheus "$PROM_PORT:9090" >"$ARC_DATA/logs/prom-forward.log" 2>&1 &
   sleep 2
 fi
 nohup python3 "$ARC_ROOT/viewer/server.py" >"$ARC_DATA/logs/viewer.log" 2>&1 &

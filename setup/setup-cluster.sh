@@ -35,7 +35,7 @@ stage_cluster() {
   [ "$(avail_mb)" -lt "$need" ] && say "WARNING: only $(avail_mb) MB free; the $PROFILE profile needs about $need MB."
   if kind get clusters 2>/dev/null | grep -qx "$ARC_CLUSTER"; then say "cluster '$ARC_CLUSTER' already exists"; else
     # Kubelet pulls ONE image at a time by default; allow 3 so one big image can't block a node.
-    # Host ports -> fixed NodePorts: 32677 website, 30090 Prometheus, 30030 Grafana.
+    # Host ports -> the chart's fixed NodePorts: 32677 website, 30003 Prometheus, 31000 Grafana.
     cat > "$CACHE/kind-$ARC_CLUSTER.yaml" <<YAML
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -54,8 +54,8 @@ nodes:
           taints: []
     extraPortMappings:
       - {containerPort: 32677, hostPort: $UI_PORT, protocol: TCP}
-      - {containerPort: 30090, hostPort: $PROM_PORT, protocol: TCP}
-      - {containerPort: 30030, hostPort: $GRAFANA_PORT, protocol: TCP}
+      - {containerPort: 30003, hostPort: $PROM_PORT, protocol: TCP}
+      - {containerPort: 31000, hostPort: $GRAFANA_PORT, protocol: TCP}
   - role: worker
   - role: worker
 YAML
@@ -211,9 +211,11 @@ stage_bringup() {
 stage_prometheus() {
   $KS get cm prometheus-config -o json > "$ARC_DATA/logs/prometheus-config.before.json"
   python3 "$ARC_ROOT/setup/prom-config.py" < "$ARC_DATA/logs/prometheus-config.before.json" | $KS apply -f - >/dev/null
-  # fixed NodePorts, so nothing depends on a fragile `kubectl port-forward`
-  $KS patch svc prometheus -p '{"spec":{"type":"NodePort","ports":[{"port":9090,"nodePort":30090}]}}' >/dev/null 2>&1 || say "could not set Prometheus NodePort (check: $KS get svc prometheus)"
-  $KS patch svc grafana -p '{"spec":{"type":"NodePort","ports":[{"port":3000,"nodePort":30030}]}}' >/dev/null 2>&1 || say "could not set Grafana NodePort"
+  # The chart publishes Prometheus on NodePort 30003 and Grafana on 31000, and the kind config maps
+  # those to $PROM_PORT / $GRAFANA_PORT on the host, so nothing depends on a fragile `kubectl port-forward`.
+  # Make sure the NodePorts really are those numbers (a no-op when they already are).
+  [ "$($KS get svc prometheus -o jsonpath='{.spec.ports[0].nodePort}')" = 30003 ] ||     $KS patch svc prometheus -p '{"spec":{"type":"NodePort","ports":[{"port":9090,"nodePort":30003}]}}' >/dev/null 2>&1 || say "could not set Prometheus NodePort (check: $KS get svc prometheus)"
+  [ "$($KS get svc grafana -o jsonpath='{.spec.ports[0].nodePort}')" = 31000 ] ||     $KS patch svc grafana -p '{"spec":{"type":"NodePort","ports":[{"port":3000,"nodePort":31000}]}}' >/dev/null 2>&1 || say "could not set Grafana NodePort"
   $KS rollout restart deploy/prometheus >/dev/null; $KS rollout status deploy/prometheus --timeout=180s >/dev/null
   for i in $(seq 1 30); do curl -s -m 3 "$PROM_URL/-/ready" >/dev/null 2>&1 && break; sleep 3; done
   curl -s -m 5 "$PROM_URL/api/v1/status/config" | python3 -c "
