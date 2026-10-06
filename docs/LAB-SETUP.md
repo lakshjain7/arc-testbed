@@ -17,6 +17,16 @@ Find out two things about the machine:
 | Windows or Ubuntu? | look at the desktop | decides step 1A or 1B |
 | Do we have admin / sudo? | Ubuntu: `sudo -v`. Windows: can you install programs? | Docker cannot be installed without it |
 
+**The repository has a checker for all of this.** It only looks; it installs and changes nothing:
+
+- Windows: copy `setup/preflight-windows.ps1` to the machine (or download it from GitHub in the browser)
+  and run in PowerShell: `powershell -ExecutionPolicy Bypass -File preflight-windows.ps1`
+- Ubuntu (native, or inside WSL once it exists): `bash setup/preflight.sh`
+
+Every line ends in `OK`, `WARN` or `FAIL`. Do not continue while there is a `FAIL`; paste the output
+to Claude if a line is unclear. Run `bash setup/preflight.sh` again after step 1 and before step 2:
+by then every tool line should be `OK`.
+
 Also ask whether the machine will be **left on, not rebooted, not used by others** for the days the
 run takes. Someone else starting a heavy job mid-run shows up in our data as fake "damage".
 

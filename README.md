@@ -15,9 +15,10 @@ One episode = one training example = `(system state graph, action, per-service d
 
 **New machine? Follow [docs/LAB-SETUP.md](docs/LAB-SETUP.md) from top to bottom.**
 
-## The five commands
+## The six commands
 
 ```bash
+bash setup/preflight.sh                  # can this machine run it? checks only, changes nothing
 bash setup/install-tools.sh              # once per machine: Docker, kind, kubectl, helm, tmux
 bash setup/setup-cluster.sh              # once per cluster: ~1-2 h, mostly downloads
 bash run/start-campaign.sh calibrate     # 20 quiet episodes -> what "normal" looks like (~3.5 h)
