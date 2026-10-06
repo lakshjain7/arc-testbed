@@ -576,4 +576,8 @@ def pods_by_node():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        log("episode stopped on request; its fault was removed and its action undone. Nothing was recorded.")
+        sys.exit(130)

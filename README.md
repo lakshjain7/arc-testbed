@@ -52,9 +52,10 @@ or action did not really happen is marked `discarded`, never silently kept.
 ~/arc-data/                      (ARC_DATA_ROOT)
   arc/raw/<episode>/             one folder per episode  <- THE DATASET
       meta.json                  what was done, when, whether it is usable
-      nodes.csv.gz               per service, per window: request rate, errors, latency, CPU, memory
-      edges.csv.gz               per caller->callee edge: rate, errors, latency
-      op_counters.csv.gz         raw request counters every 5 s (labels are computed from these)
+      services.csv.gz            per service, every 5 s: request rate, errors, latency, CPU, memory
+      edges.csv.gz               per caller->callee edge, every 5 s: rate, failed rate (the graph)
+      counters.csv.gz            raw per-service counters every 5 s
+      op_counters.csv.gz         raw per-operation request counters every 5 s (labels are computed from these)
       client.csv.gz              every request a simulated user made, and what they got
       events.json                Kubernetes events during the episode
       labels_v2.json             per-service damage: y_mean, y_peak, y_excess, t_recover, verdict
@@ -87,5 +88,10 @@ or action did not really happen is marked `discarded`, never silently kept.
   too strong; the *size* of the damage separates actions clearly (drain >> restart > rollout-restart >
   scale-up ~ cpu-bump ~ noop). See [docs/research/07-pilot-results.md](docs/research/07-pilot-results.md).
 - This repository applies those lessons: milder faults at several levels, magnitude labels first.
+- Known limit of the labels: services with little traffic (a few requests per 30 s) have noisy peaks
+  (one slow request = +20 points). Always compare an action with the no-op episodes of the same block,
+  never with zero. More load (`ARC_RATE`) on the bigger machine shrinks this noise.
+- Fixed on 2026-10-07: the simulated "pay" flow used to stop for ~10 minutes at a time (13 of 52 pilot
+  episodes had no payment at all, so the two payment services had no data in them).
 - The multi-cluster setup script is new and has **not yet run end to end on a fresh machine**;
   expect to fix small things on day 1. Each stage can be re-run on its own (`--from`, `--only`).

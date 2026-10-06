@@ -203,8 +203,12 @@ def cmd_calibrate(a):
            for i in range(start, start + a.episodes)]
     run_list([eps])
     log("calibration episodes done; fitting thresholds on every no-fault no-op episode of this machine")
-    subprocess.run([sys.executable, arcenv.script("harness", "calibrate_v2.py")])
-    log("CALIBRATION DONE (re-label old episodes with: python3 harness/relabel.py)")
+    r = subprocess.run([sys.executable, arcenv.script("harness", "calibrate_v2.py")])
+    if r.returncode == 0:
+        log("CALIBRATION DONE (re-label old episodes with: python3 harness/relabel.py)")
+    else:
+        log("CALIBRATION EPISODES DONE, BUT THE FIT FAILED (see the lines above; it needs about 8+ usable "
+            "episodes). Run more: run/start-campaign.sh calibrate 10")
 
 
 def cmd_status(a):
@@ -260,14 +264,17 @@ def main():
         plan = make_plan(a.name, a.episodes, seed, a.hard, a.delay_max)
         json.dump(plan, open(plan_path(a.name), "w"), indent=1)
         eps = plan["episodes"]
-        print(f"wrote {plan_path(a.name)}: {len(eps)} episodes in {eps[-1]['block']} blocks, seed {seed}")
+        print(f"wrote {plan_path(a.name)}: {len(eps)} episodes in {eps[-1]['block']} blocks of 7, seed {seed}"
+              + (f"  (asked for {a.episodes}; rounded up so the last block is complete)" if len(eps) != a.episodes else ""))
         print("  faults: ", dict(Counter(f"{e['fault']}{'' if e['level'] is None else ':' + str(e['level'])}" for e in eps)))
         print("  actions:", dict(Counter(e["action"] for e in eps)))
         print(f"  at ~10 min per episode: about {len(eps)*10/60:.0f} hours ({len(eps)*10/60/24:.1f} days) on this cluster")
-    elif a.cmd == "run":
-        cmd_run(a)
-    elif a.cmd == "calibrate":
-        cmd_calibrate(a)
+    elif a.cmd in ("run", "calibrate"):
+        try:
+            cmd_run(a) if a.cmd == "run" else cmd_calibrate(a)
+        except (Stop, KeyboardInterrupt):        # stopped between episodes: nothing to undo
+            log("STOPPED by request. The same command resumes where it left off.")
+            sys.exit(130)
     else:
         cmd_status(a)
 

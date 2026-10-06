@@ -86,11 +86,14 @@ class Generator:
         self.a = a
         self.rng = random.Random(a.seed)
         self.s = Session(a.base, a.timeout)
-        # (orderId, trainNumber, seen_at) from "orders". Only orders seen in the last PAY_MAX_AGE_S are
-        # paid: harness/reset-data.sh deletes orders older than 10 min between episodes, and paying a
+        # (orderId, trainNumber, seen_at) from "orders". Only orders first seen in the last PAY_MAX_AGE_S
+        # are paid: ops/reset-data.sh deletes orders older than 10 min between episodes, and paying a
         # deleted order would show up as a false business failure.
-        self.unpaid = deque(maxlen=50)
+        # The order list is NOT in time order, so the whole list is scanned. (Reading only its last 50
+        # entries starved the pay flow for 10 minutes at a time: 13 of 52 pilot episodes had no payment.)
+        self.unpaid = deque()
         self.claimed = set()                     # orders already queued or paid, so none is paid twice
+        self.baselined = False                   # first look at the list: what is already there is old, skip it
         self.recent = deque()                    # (t_end, op, ok, ms) for the rolling summary
         self.lock = threading.Lock()
         self.inflight = 0
@@ -123,10 +126,13 @@ class Generator:
         ok = bool(b) and b.get("status") == 1
         if ok:
             with self.lock:
-                for o in (b.get("data") or [])[-50:]:
+                now = time.time()
+                for o in (b.get("data") or []):
                     if o.get("status") == 0 and o.get("id") and o["id"] not in self.claimed:
                         self.claimed.add(o["id"])
-                        self.unpaid.append((o["id"], o.get("trainNumber"), time.time()))
+                        if self.baselined:           # new since the previous look, so it is fresh
+                            self.unpaid.append((o["id"], o.get("trainNumber"), now))
+                self.baselined = True
         return code, ok, dt, "", None if ok else _why(b)
 
     def op_book(self):
