@@ -25,11 +25,14 @@ run takes. Someone else starting a heavy job mid-run shows up in our data as fak
 ## 1A. If the machine runs Ubuntu (best case)
 
 ```bash
-sudo apt-get update && sudo apt-get install -y git
-git clone https://github.com/lakshjain7/arc-testbed.git ~/arc-testbed
+sudo apt-get update && sudo apt-get install -y git gh
+gh auth login            # the repository is private: choose GitHub.com, HTTPS, "Login with a web browser"
+gh repo clone lakshjain7/arc-testbed ~/arc-testbed
 cd ~/arc-testbed
 bash setup/install-tools.sh
 ```
+(No `gh`? Sign in to github.com in the browser, open the repository, Code -> Download ZIP, and unpack
+it to `~/arc-testbed`. Always start scripts as `bash <script>`, as this guide does.)
 
 The first time, it installs Docker and tells you to log out and back in. Do that, then run
 `bash setup/install-tools.sh` again; it must end with every line saying `ok`.
@@ -64,11 +67,14 @@ Everything runs inside Ubuntu-on-Windows (WSL2), exactly as on the laptop.
 
 5. Inside Ubuntu:
    ```bash
-   sudo apt-get update && sudo apt-get install -y git
-   git clone https://github.com/lakshjain7/arc-testbed.git ~/arc-testbed
+   sudo apt-get update && sudo apt-get install -y git gh
+   gh auth login            # the repository is private: choose GitHub.com, HTTPS, "Login with a web browser"
+   gh repo clone lakshjain7/arc-testbed ~/arc-testbed
    cd ~/arc-testbed
    bash setup/install-tools.sh
    ```
+   (No `gh`? Sign in to github.com in the browser, open the repository, Code -> Download ZIP, and unpack
+   it to `~/arc-testbed`. Always start scripts as `bash <script>`, as this guide does.)
    It must end with every line saying `ok`.
 
 Keep the repository and the data **inside Ubuntu** (`~/...`), never under `/mnt/c/` (10x slower).
