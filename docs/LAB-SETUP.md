@@ -35,7 +35,7 @@ bash setup/install-tools.sh
 it to `~/arc-testbed`. Always start scripts as `bash <script>`, as this guide does.)
 
 The first time, it installs Docker and tells you to log out and back in. Do that, then run
-`bash setup/install-tools.sh` again; it must end with every line saying `ok`.
+`bash setup/install-tools.sh` again; it must end with the line `Tools ready`.
 
 Go to step 2.
 
@@ -75,7 +75,7 @@ Everything runs inside Ubuntu-on-Windows (WSL2), exactly as on the laptop.
    ```
    (No `gh`? Sign in to github.com in the browser, open the repository, Code -> Download ZIP, and unpack
    it to `~/arc-testbed`. Always start scripts as `bash <script>`, as this guide does.)
-   It must end with every line saying `ok`.
+   It must end with the line `Tools ready`.
 
 Keep the repository and the data **inside Ubuntu** (`~/...`), never under `/mnt/c/` (10x slower).
 
