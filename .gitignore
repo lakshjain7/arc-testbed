@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.jar
+*.tar.gz
+/data/
+arc-data/
+.env

@@ -1,0 +1,46 @@
+# Every image the core profile needs. setup-cluster.sh pulls each once on the host and copies it
+# into the kind nodes, so no pod ever waits on a download (the cause of the "stuck pods" days).
+# --- deploy job and infrastructure ---
+ghcr.io/sregym/train-ticket-deploy:latest
+ghcr.io/open-feature/flagd:v0.11.1
+radondb/percona:5.7.34
+radondb/xenon:1.1.5-helm
+nacos/nacos-server:2.0.1
+codewisdom/rabbitmq:3
+codewisdom/mysqlclient:0.1
+busybox:1.32
+busybox:1.36
+curlimages/curl:8.10.1
+# --- monitoring bundled with the Train Ticket chart ---
+prom/prometheus:v2.46.0
+grafana/grafana:10.0.1
+prom/node-exporter
+registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.10.1
+569107519/alertsnitch-mysql:v1.0
+registry.gitlab.com/yakshaving.art/alertsnitch
+# --- telemetry and fault injection ---
+otel/opentelemetry-collector-contrib:0.111.0
+ghcr.io/chaos-mesh/chaos-mesh:v2.6.3
+ghcr.io/chaos-mesh/chaos-daemon:v2.6.3
+# --- Train Ticket: the 20 core services + the website ---
+ghcr.io/sregym/ts-auth-service:latest
+ghcr.io/sregym/ts-basic-service:latest
+ghcr.io/sregym/ts-config-service:latest
+ghcr.io/sregym/ts-contacts-service:latest
+ghcr.io/sregym/ts-gateway-service:latest
+ghcr.io/sregym/ts-inside-payment-service:latest
+ghcr.io/sregym/ts-notification-service:latest
+ghcr.io/sregym/ts-order-other-service:latest
+ghcr.io/sregym/ts-order-service:latest
+ghcr.io/sregym/ts-payment-service:latest
+ghcr.io/sregym/ts-preserve-service:latest
+ghcr.io/sregym/ts-price-service:latest
+ghcr.io/sregym/ts-route-service:latest
+ghcr.io/sregym/ts-seat-service:latest
+ghcr.io/sregym/ts-security-service:latest
+ghcr.io/sregym/ts-station-service:latest
+ghcr.io/sregym/ts-train-service:latest
+ghcr.io/sregym/ts-travel-service:latest
+ghcr.io/sregym/ts-ui-dashboard:latest
+ghcr.io/sregym/ts-user-service:latest
+ghcr.io/sregym/ts-verification-code-service:latest
