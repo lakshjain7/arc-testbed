@@ -93,5 +93,8 @@ or action did not really happen is marked `discarded`, never silently kept.
   never with zero. More load (`ARC_RATE`) on the bigger machine shrinks this noise.
 - Fixed on 2026-10-07: the simulated "pay" flow used to stop for ~10 minutes at a time (13 of 52 pilot
   episodes had no payment at all, so the two payment services had no data in them).
-- The multi-cluster setup script is new and has **not yet run end to end on a fresh machine**;
-  expect to fix small things on day 1. Each stage can be re-run on its own (`--from`, `--only`).
+- Tested on 2026-10-07 on the laptop: `setup/setup-cluster.sh` built a second cluster from nothing in
+  71 minutes (all 9 stages, real booking verified); the campaign runner, calibrate mode, clean stop and
+  resume ran on real episodes. Not tested: native Ubuntu (only WSL2), `install-tools.sh` on a machine
+  with nothing installed, `PROFILE=full`, and two clusters running at the same time.
+  Each setup stage can be re-run on its own (`--from`, `--only`).

@@ -110,6 +110,8 @@ If a stage fails: read the message, fix, and continue from that stage, for examp
 `bash setup/setup-cluster.sh --from bringup`. Nothing has to be rebuilt from the start.
 
 It is finished when it prints **"Cluster arc is up"** and a real booking has gone through.
+(Reference: on the laptop, with a 6 MB/s connection, a complete fresh build took 71 minutes:
+images 32, deploy 16, services 11, checks and warm-up 8.)
 Open http://localhost:32677 in the machine's browser (user `fdse_microservice`, password `111111`)
 to see the website.
 
@@ -119,7 +121,8 @@ Use the default (**core, 20 services**) for the first dataset. Reasons:
 
 - The simulated users only search, book, pay and list orders. That path touches the 20 core services.
   The other 25 would run but receive no traffic, so they add memory use and no information.
-- Core needs ~14 GB. All 45 need ~26 GB, which leaves no room for a second cluster.
+- Core needs ~13 GB (measured on a fresh build, 2026-10-07). All 45 need ~26 GB, which leaves no room
+  for a second cluster.
 - Two core clusters collect data twice as fast. That is worth more than idle services.
 
 All 45 (`PROFILE=full bash setup/setup-cluster.sh`) becomes useful only after the load generator

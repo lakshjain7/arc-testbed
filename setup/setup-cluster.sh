@@ -132,14 +132,21 @@ stage_tame() {
   # Its default heap is 1 GB per copy; 512 MB is plenty.
   if [ "$($K get sts nacos -o jsonpath='{.spec.replicas}')" != "1" ] || ! $K get sts nacos -o yaml | grep -q "value: standalone"; then
     say "Nacos -> 1 standalone copy, heap capped"
+    local old; old=$($K get pod nacos-0 -o jsonpath='{.metadata.uid}' 2>/dev/null)
     $K scale sts/nacos --replicas=1 >/dev/null
     $K set env sts/nacos MODE=standalone SPRING_DATASOURCE_PLATFORM=mysql JVM_XMS=256m JVM_XMX=512m JVM_XMN=128m >/dev/null
     sleep 5; $K delete pod nacos-0 --wait=false >/dev/null 2>&1      # a StatefulSet won't replace a not-Ready pod by itself
+    # The old pod keeps answering "200" while it terminates. Wait until it is really gone, or the
+    # checks below pass against the OLD Nacos (found on 2026-10-07 on the first fresh-machine run).
+    for i in $(seq 1 60); do
+      [ "$($K get pod nacos-0 -o jsonpath='{.metadata.uid}' 2>/dev/null)" != "$old" ] && [ -z "$($K get pods --no-headers 2>/dev/null | awk '$1 ~ /^nacos-[12]$/')" ] && break
+      sleep 5
+    done
   fi
   say "waiting for MySQL (nacosdb, tsdb), Nacos, RabbitMQ"
   for i in $(seq 1 90); do
     db=$($K get pods --no-headers | grep -E '^(tsdb|nacosdb)-mysql' | awk '{split($2,a,"/"); if (a[1]!=a[2]) print}' | wc -l)
-    na=$($K get pods --no-headers | awk '$1=="nacos-0" && $2=="1/1"' | wc -l)
+    na=$($K get pods --no-headers | awk '$1=="nacos-0" && $2=="1/1" && $3=="Running"' | wc -l)
     api=$($K exec nacos-0 -c k8snacos -- curl -s -m 3 -o /dev/null -w '%{http_code}' "localhost:8848/nacos/v1/ns/service/list?pageNo=1&pageSize=1" 2>/dev/null)
     [ "$db" = 0 ] && [ "$na" = 1 ] && [ "$api" = 200 ] && break
     sleep 10
@@ -234,7 +241,7 @@ stage_chaos() {
     --set controllerManager.replicaCount=1 --set controllerManager.leaderElection.enabled=false \
     --set dashboard.create=false --set dnsServer.create=false \
     --set controllerManager.podChaos.podFailure.pauseImage=registry.k8s.io/pause:3.10 \
-    --set images.tag=v2.6.3 --wait --timeout 10m >/dev/null || { say "Chaos Mesh install failed"; exit 1; }
+    --set images.tag=v2.6.3 --wait --timeout 10m 2> >(grep -v 'warnings.go' >&2) >/dev/null || { say "Chaos Mesh install failed"; exit 1; }
   kubectl --context "$KCTX" -n chaos-mesh get pods --no-headers | awk '{print "   "$1, $2, $3}'
   bash "$ARC_ROOT/setup/chaos-canary.sh"
 }
