@@ -13,8 +13,9 @@ Design (randomised complete blocks, as in the pilot, with the pilot's lessons ap
   - a block = one fault condition x 7 episodes: every action once + noop twice (noop = 2/7 = 29%)
   - fault conditions, at SEVERAL MILD levels (the pilot's 300 ms delay, 1/4-CPU squeeze and blackhole
     saturated the system and hid the action's effect):
-        none | pod-kill | network-delay 50, 100 ms | net-loss 5, 15 % | cpu-squeeze 0.5, 0.35
-    add --hard for: network-delay 300 ms, cpu-squeeze 0.25, blackhole
+        none | pod-kill | network-delay 50, 100 ms | net-loss 5, 15 % | cpu-squeeze 3x, 1.5x average use
+    the levels are options of `plan` (--delay --loss --squeeze); measure good ones for a machine with
+    harness/dose_check.py.  add --hard for: network-delay 300 ms, cpu-squeeze 0.5x, blackhole
   - fault target: a random permutation of the 6 target services (+1 random pick) per block
   - action target: the fault's target with p = 0.5, otherwise another target ("wrong diagnosis")
   - delay from fault to action: uniform 60-300 s
@@ -30,9 +31,9 @@ import arcenv
 
 TARGETS = arcenv.PILOT_TARGETS
 ACTIONS = ["restart-pod", "rollout-restart", "scale-up", "cpu-bump", "drain", "noop", "noop"]
-CONDITIONS = [("none", None), ("pod-kill", None), ("network-delay", 50), ("network-delay", 100),
-              ("net-loss", 5), ("net-loss", 15), ("cpu-squeeze", 0.5), ("cpu-squeeze", 0.35)]
-HARD = [("network-delay", 300), ("cpu-squeeze", 0.25), ("blackhole", None)]
+# Defaults; override per machine after harness/dose_check.py:  plan --delay 50,100 --loss 5,15 --squeeze 3,1.5
+LEVELS = {"network-delay": [50, 100], "net-loss": [5, 15], "cpu-squeeze": [3, 1.5]}
+HARD = [("network-delay", 300), ("cpu-squeeze", 0.5), ("blackhole", None)]
 PLANS = os.path.join(arcenv.DATA, "plans")
 os.makedirs(PLANS, exist_ok=True)
 
@@ -56,9 +57,10 @@ def plan_path(name):
     return os.path.join(PLANS, f"{name}.json")
 
 
-def make_plan(name, n_episodes, seed, hard, delay_max):
+def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS):
     rng = random.Random(seed)
-    conds = CONDITIONS + (HARD if hard else [])
+    conds = [("none", None), ("pod-kill", None)] + [(f, l) for f in ("network-delay", "net-loss", "cpu-squeeze")
+                                                    for l in levels[f]] + (HARD if hard else [])
     eps, block = [], 0
     while len(eps) < n_episodes:
         order = conds[:]
@@ -251,6 +253,11 @@ def main():
     pl.add_argument("--episodes", type=int, required=True); pl.add_argument("--name", default="main")
     pl.add_argument("--seed", type=int); pl.add_argument("--hard", action="store_true")
     pl.add_argument("--delay-max", type=int, default=300); pl.add_argument("--force", action="store_true")
+    num = lambda v: [float(x) if "." in x else int(x) for x in v.split(",")]
+    pl.add_argument("--delay", type=num, default=LEVELS["network-delay"], help="network-delay levels in ms, e.g. 50,100")
+    pl.add_argument("--loss", type=num, default=LEVELS["net-loss"], help="net-loss levels in percent, e.g. 5,15")
+    pl.add_argument("--squeeze", type=num, default=LEVELS["cpu-squeeze"],
+                    help="cpu-squeeze levels: CPU limit as a multiple of the service's recent average use, e.g. 3,1.5")
     for nm in ("run", "status"):
         s = sub.add_parser(nm); s.add_argument("--name", default="main")
     a = p.parse_args()
@@ -261,7 +268,8 @@ def main():
         if os.path.exists(plan_path(a.name)) and not a.force:
             sys.exit(f"{plan_path(a.name)} exists. Use --force only before any of its episodes has run.")
         seed = a.seed if a.seed is not None else int(hashlib.md5(f"{a.name}/{arcenv.CLUSTER}".encode()).hexdigest()[:8], 16)
-        plan = make_plan(a.name, a.episodes, seed, a.hard, a.delay_max)
+        plan = make_plan(a.name, a.episodes, seed, a.hard, a.delay_max,
+                         {"network-delay": a.delay, "net-loss": a.loss, "cpu-squeeze": a.squeeze})
         json.dump(plan, open(plan_path(a.name), "w"), indent=1)
         eps = plan["episodes"]
         print(f"wrote {plan_path(a.name)}: {len(eps)} episodes in {eps[-1]['block']} blocks of 7, seed {seed}"

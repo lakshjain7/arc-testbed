@@ -155,6 +155,26 @@ the bigger machine buys us.
 bash run/start-campaign.sh calibrate
 ```
 
+While it runs you cannot do step 4b; do 4b first if you prefer (it needs the load generator running:
+`python3 loadgen/loadgen.py --rate $ARC_RATE &`, wait 5 minutes, and stop it afterwards with
+`bash loadgen/stop-loadgen.sh`).
+
+### 4b. Dose check: how hard does each fault hit on this machine? (25 minutes)
+
+```bash
+python3 harness/dose_check.py
+```
+
+It switches each fault on for 90 seconds at each level and prints how many user requests went bad,
+with a verdict per line: `too weak`, `good`, `strong`, `TOO STRONG`. We want, for each fault, one level
+around 10-25 % bad and one around 40-60 %. A fault that breaks everything hides the action's effect
+(that spoiled 18 of 46 pilot episodes); one that does nothing leaves nothing to fix.
+
+If a default level is not `good`, try others (`python3 harness/dose_check.py cpu-squeeze:8,4,2`) and
+give the chosen ones when the plan is made in step 5:
+`python3 harness/run_campaign.py plan --episodes 700 --delay 50,100 --loss 5,15 --squeeze 3,1.5`
+(then `bash run/start-campaign.sh campaign` runs that plan).
+
 Runs 20 episodes with no fault and no action, to learn what "normal wobble" looks like on this
 machine. At the end it prints a table; the last line must show a held-out false-harm rate near 0%.
 
@@ -243,7 +263,7 @@ To free the machine: `kind delete cluster --name arc` (and `arc2`). Uninstalling
 
 | pilot (laptop) | now | why |
 |---|---|---|
-| delay 300 ms, CPU squeezed to 1/4, blackhole | delay 50 / 100 ms, loss 5 / 15 %, CPU to 1/2 and ~1/3 | 18 of 46 pilot episodes were already fully broken before the action, so the action's effect could not be seen |
+| delay 300 ms, CPU squeezed to 1/4, blackhole | delay 50 / 100 ms, loss 5 / 15 %, CPU limit 3x and 1.5x the service's average use; all adjustable, measured per machine with `harness/dose_check.py` | 18 of 46 pilot episodes were already fully broken before the action, so the action's effect could not be seen |
 | one level per fault | two levels per fault | the model should learn that the same action costs more in a worse incident |
 | 1 no-op per block | 2 no-ops per block of 7 (29%) | the no-op is the reference every action is compared with |
 | yes/no "harmed" per service was the main label | sizes (`y_mean`, `y_peak`, `y_excess`, `t_recover`) are the main labels; yes/no kept as a secondary | the sizes separated actions clearly in the pilot, the yes/no did not |

@@ -9,7 +9,7 @@ The cluster is chosen with ARC_CLUSTER / ARC_INDEX (lib/env.sh). A continuous lo
 should already be running for that cluster; if none is, the episode starts its own.
 
 Faults (each verified after injection): none, pod-kill, network-delay (ms), net-loss (percent),
-        cpu-squeeze (fraction of recent CPU use), blackhole.   --fault-param sets the level.
+        cpu-squeeze (limit = multiple of recent CPU use), blackhole.   --fault-param sets the level.
 Actions (each with a checked post-condition, undone after M): noop, restart-pod, rollout-restart,
         scale-up, cpu-bump, drain.
 A no-fault no-op episode measures how much the numbers move when nothing happens: the noise
@@ -307,7 +307,7 @@ CHAOS_KIND = {"pod-kill": "podchaos", "network-delay": "networkchaos", "net-loss
 # Default levels. The pilot's 300 ms delay, 1/4-CPU squeeze and blackhole SATURATED the system (users
 # >= 80% bad before the action in 39% of episodes), which hides the action's effect. Milder defaults;
 # the campaign draws from several levels per fault (harness/run_campaign.py).
-FAULT_DEFAULT_PARAM = {"network-delay": 100, "net-loss": 15, "cpu-squeeze": 0.5}
+FAULT_DEFAULT_PARAM = {"network-delay": 100, "net-loss": 15, "cpu-squeeze": 3}
 
 
 def chaos_cr(fault, target, name, param):
@@ -370,8 +370,10 @@ def apply_fault(fault, target, name, param):
     if fault == "none":
         return True, {}
     if fault == "cpu-squeeze":
-        # A fraction of what the service actually used over the last 2 min (floor 25m), so the squeeze
-        # bites equally hard on busy and quiet services (station uses ~0.03 cores, order ~0.3).
+        # CPU limit = level x what the service used on AVERAGE over the last 2 min (floor 25m), so the
+        # squeeze bites equally hard on busy and quiet services (station uses ~0.03 cores, order ~0.3).
+        # A JVM needs short bursts far above its average: a level below ~1 leaves it unable to answer
+        # at all (0.5 and 0.35 both gave station 25m and 90 % bad requests, 2026-10-07). Use levels > 1.
         frac = float(param or FAULT_DEFAULT_PARAM[fault])
         used = prom_scalar(f'sum(rate(container_cpu_usage_seconds_total{{container="{target}"}}[2m]))') or 0.1
         lim = f"{max(SQUEEZE_MIN_M, int(used * 1000 * frac))}m"
@@ -429,7 +431,7 @@ def main():
     p.add_argument("--fault", default="none", choices=FAULTS)
     p.add_argument("--fault-target")
     p.add_argument("--fault-param", help="level: network-delay = latency ms (default 100); net-loss = percent "
-                                         "(default 15); cpu-squeeze = fraction of recent CPU use kept (default 0.5)")
+                                         "(default 15); cpu-squeeze = CPU limit as a multiple of recent average use (default 3)")
     p.add_argument("--action", choices=ACTIONS)
     p.add_argument("--target", help="action target service (default: random from the pilot set)")
     p.add_argument("--delay", type=float, help="seconds from fault to action (default: random 60-300)")
