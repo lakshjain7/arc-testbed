@@ -14,8 +14,8 @@ users active, injects a fault, applies one randomly assigned action, records eve
 the per-service damage. One episode = one training example. After the data: train an
 action-conditioned graph neural network and compare it with simple baselines (hop distance, diffusion).
 
-Team: Laksh (GitHub `lakshjain7`, owns cluster and harness), Abhishek, Yogesh. Guide: their teacher
-("ma'am"), who arranged the lab machine.
+Team: three students; Laksh (GitHub `lakshjain7`) owns the cluster and the harness. The lab machine
+was arranged through their faculty guide.
 
 ## Where things stand (7 Oct 2026)
 
@@ -91,4 +91,5 @@ Team: Laksh (GitHub `lakshjain7`, owns cluster and harness), Abhishek, Yogesh. G
   of them were not in the original chat. Say what a thing is for before how it works.
 - Be decisive: give one recommendation, not a menu.
 - Verify before saying something works, and say plainly what was tested and what was not.
-- Do not commit data, the 25 MB agent jar, or secrets. The repository is private.
+- Do not commit data, the 25 MB agent jar, or secrets. The repository is PUBLIC (since 7 Oct 2026):
+  nothing personal, no passwords or tokens, no machine addresses in any commit.
