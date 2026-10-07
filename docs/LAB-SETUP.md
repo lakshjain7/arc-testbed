@@ -170,10 +170,15 @@ with a verdict per line: `too weak`, `good`, `strong`, `TOO STRONG`. We want, fo
 around 10-25 % bad and one around 40-60 %. A fault that breaks everything hides the action's effect
 (that spoiled 18 of 46 pilot episodes); one that does nothing leaves nothing to fix.
 
-If a default level is not `good`, try others (`python3 harness/dose_check.py cpu-squeeze:8,4,2`) and
+If a default level is not `good`, try others (`python3 harness/dose_check.py cpu-squeeze:2,1.25 network-delay:50,100`) and
 give the chosen ones when the plan is made in step 5:
-`python3 harness/run_campaign.py plan --episodes 700 --delay 50,100 --loss 5,15 --squeeze 3,1.5`
+`python3 harness/run_campaign.py plan --episodes 700 --delay 25,75 --loss 15,30 --squeeze 1.5,1`
 (then `bash run/start-campaign.sh campaign` runs that plan).
+
+Laptop reference at 2 requests/s (share of user requests that went bad): delay 25 ms 31 %, 50 ms 31 %,
+100 ms 73 %; loss 5 % 0 %, 15 % 12 %, 30 % 59 %; CPU squeeze 3x 0 %, 1.5x 8-20 %, 1x 70 %. The CPU
+squeeze is a cliff and its numbers jump around between runs; that is expected. Every episode records
+the limit it really applied (`fault_info.cpu_limit` in `meta.json`).
 
 Runs 20 episodes with no fault and no action, to learn what "normal wobble" looks like on this
 machine. At the end it prints a table; the last line must show a held-out false-harm rate near 0%.
@@ -263,7 +268,7 @@ To free the machine: `kind delete cluster --name arc` (and `arc2`). Uninstalling
 
 | pilot (laptop) | now | why |
 |---|---|---|
-| delay 300 ms, CPU squeezed to 1/4, blackhole | delay 50 / 100 ms, loss 5 / 15 %, CPU limit 3x and 1.5x the service's average use; all adjustable, measured per machine with `harness/dose_check.py` | 18 of 46 pilot episodes were already fully broken before the action, so the action's effect could not be seen |
+| delay 300 ms, CPU squeezed to 1/4, blackhole | delay 25 / 75 ms, loss 15 / 30 %, CPU limit 1.5x and 1x the service's average use; all adjustable, measured per machine with `harness/dose_check.py` | 18 of 46 pilot episodes were already fully broken before the action, so the action's effect could not be seen |
 | one level per fault | two levels per fault | the model should learn that the same action costs more in a worse incident |
 | 1 no-op per block | 2 no-ops per block of 7 (29%) | the no-op is the reference every action is compared with |
 | yes/no "harmed" per service was the main label | sizes (`y_mean`, `y_peak`, `y_excess`, `t_recover`) are the main labels; yes/no kept as a secondary | the sizes separated actions clearly in the pilot, the yes/no did not |

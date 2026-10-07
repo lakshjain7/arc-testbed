@@ -290,7 +290,7 @@ def fault_on_new_pod(fault, chaos_name, target):
 # processes run outside the target container on kind + cgroup v2 (target never throttled, whole host at
 # load 25, every service timing out). cpu-squeeze replaces it: the target's CPU limit is cut in place.
 FAULTS = ["none", "pod-kill", "network-delay", "net-loss", "cpu-squeeze", "blackhole", "cpu-stress"]
-SQUEEZE_MIN_M = 25        # never squeeze below 25 millicores
+SQUEEZE_MIN_M = 25        # never squeeze below 25 millicores (lower was never tested; a starved JVM may fail its liveness probe)
 
 
 def prom_scalar(q):
@@ -307,7 +307,7 @@ CHAOS_KIND = {"pod-kill": "podchaos", "network-delay": "networkchaos", "net-loss
 # Default levels. The pilot's 300 ms delay, 1/4-CPU squeeze and blackhole SATURATED the system (users
 # >= 80% bad before the action in 39% of episodes), which hides the action's effect. Milder defaults;
 # the campaign draws from several levels per fault (harness/run_campaign.py).
-FAULT_DEFAULT_PARAM = {"network-delay": 100, "net-loss": 15, "cpu-squeeze": 3}
+FAULT_DEFAULT_PARAM = {"network-delay": 50, "net-loss": 15, "cpu-squeeze": 1.5}
 
 
 def chaos_cr(fault, target, name, param):
@@ -373,7 +373,8 @@ def apply_fault(fault, target, name, param):
         # CPU limit = level x what the service used on AVERAGE over the last 2 min (floor 25m), so the
         # squeeze bites equally hard on busy and quiet services (station uses ~0.03 cores, order ~0.3).
         # A JVM needs short bursts far above its average: a level below ~1 leaves it unable to answer
-        # at all (0.5 and 0.35 both gave station 25m and 90 % bad requests, 2026-10-07). Use levels > 1.
+        # at all (0.5 and 0.35 gave station 90 % bad requests, 2026-10-07). CPU starvation is a cliff:
+        # 3x = no effect, 1.5x = 8-20 % bad, 1x = 70 % bad. Use levels between 1 and 2.
         frac = float(param or FAULT_DEFAULT_PARAM[fault])
         used = prom_scalar(f'sum(rate(container_cpu_usage_seconds_total{{container="{target}"}}[2m]))') or 0.1
         lim = f"{max(SQUEEZE_MIN_M, int(used * 1000 * frac))}m"
@@ -431,7 +432,7 @@ def main():
     p.add_argument("--fault", default="none", choices=FAULTS)
     p.add_argument("--fault-target")
     p.add_argument("--fault-param", help="level: network-delay = latency ms (default 100); net-loss = percent "
-                                         "(default 15); cpu-squeeze = CPU limit as a multiple of recent average use (default 3)")
+                                         "(default 15); cpu-squeeze = CPU limit as a multiple of recent average use (default 1.5)")
     p.add_argument("--action", choices=ACTIONS)
     p.add_argument("--target", help="action target service (default: random from the pilot set)")
     p.add_argument("--delay", type=float, help="seconds from fault to action (default: random 60-300)")

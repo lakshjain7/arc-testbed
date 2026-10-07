@@ -11,7 +11,7 @@ off -> 45 s to recover. "Bad" = failed, or slower than 2x that flow's healthy 95
 Needs the continuous load generator (run/start-campaign.sh starts one; or loadgen/loadgen.py --rate N &).
 
   dose_check.py                                   the default candidates below (~25 min)
-  dose_check.py network-delay:50,100,200 cpu-squeeze:6,3,1.5
+  dose_check.py network-delay:50,100 cpu-squeeze:2,1.25
 """
 import json, os, sys, time
 
@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_episode as R
 import arcenv
 
-CANDIDATES = {"network-delay": [50, 100], "net-loss": [5, 15], "cpu-squeeze": [6, 3, 1.5]}
+CANDIDATES = {"network-delay": [25, 75], "net-loss": [15, 30], "cpu-squeeze": [1.5, 1]}
 TARGET = {"network-delay": "ts-seat-service", "net-loss": "ts-travel-service", "cpu-squeeze": "ts-station-service"}
 BASE_S, ON_S, MEASURE_S, REST_S = 60, 90, 60, 45
 
@@ -53,8 +53,8 @@ def main():
     ok, why, _ = R.wait_healthy(120)
     if not ok:
         sys.exit(f"cluster not healthy: {why}")
-    print(f"cluster {arcenv.CLUSTER}, load {st.get('rate_target')} req/s. Each level takes ~3.5 min.\n")
-    print(f"  {'fault':14s} {'level':>6s} {'on':22s} {'requests':>8s} {'failed':>7s} {'slow':>6s} {'BAD':>6s}  {'median ms':>16s}  verdict")
+    print(f"cluster {arcenv.CLUSTER}, load {st.get('rate_target')} req/s. Each level takes 3.5-5 min.\n", flush=True)
+    print(f"  {'fault':14s} {'level':>6s} {'on':22s} {'requests':>8s} {'failed':>7s} {'slow':>6s} {'BAD':>6s}  {'median ms':>16s}  verdict", flush=True)
     results = []
     for fault, levels in cands.items():
         target = TARGET.get(fault, "ts-station-service")
@@ -86,13 +86,14 @@ def main():
                   f"{bad:5.1f}%  {med(base):6.0f} -> {med(rows):6.0f}  {verdict}", flush=True)
             results.append({"fault": fault, "level": lvl, "target": target, "n": n, "failed_pct": 100 * failed / max(n, 1),
                             "slow_pct": 100 * slow / max(n, 1), "bad_pct": bad, "verified": okf, "info": info, "verdict": verdict})
-            time.sleep(REST_S)
+            # the squeeze is sized from the CPU used in the last 2 min: let a previous squeeze leave that window
+            time.sleep(130 if fault == "cpu-squeeze" else REST_S)
             R.wait_healthy(180)
     out = os.path.join(arcenv.DATA, "logs", f"dose-check-{time.strftime('%Y%m%d-%H%M')}.json")
     json.dump({"rate": st.get("rate_target"), "results": results}, open(out, "w"), indent=1)
     print(f"\nsaved {out}")
-    print("Pick, per fault, one level marked 'good' near 10-25 % and one near 40-60 %, and plan with e.g.:")
-    print("  python3 harness/run_campaign.py plan --episodes 700 --delay 50,100 --loss 5,15 --squeeze 3,1.5")
+    print("Pick, per fault, one level near 10-25 % BAD and one near 40-60 %, and give them to the plan:")
+    print("  python3 harness/run_campaign.py plan --episodes 700 --delay A,B --loss C,D --squeeze E,F")
 
 
 if __name__ == "__main__":

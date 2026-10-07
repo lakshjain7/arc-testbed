@@ -13,7 +13,7 @@ Design (randomised complete blocks, as in the pilot, with the pilot's lessons ap
   - a block = one fault condition x 7 episodes: every action once + noop twice (noop = 2/7 = 29%)
   - fault conditions, at SEVERAL MILD levels (the pilot's 300 ms delay, 1/4-CPU squeeze and blackhole
     saturated the system and hid the action's effect):
-        none | pod-kill | network-delay 50, 100 ms | net-loss 5, 15 % | cpu-squeeze 3x, 1.5x average use
+        none | pod-kill | network-delay 25, 75 ms | net-loss 15, 30 % | cpu-squeeze 1.5x, 1x average use
     the levels are options of `plan` (--delay --loss --squeeze); measure good ones for a machine with
     harness/dose_check.py.  add --hard for: network-delay 300 ms, cpu-squeeze 0.5x, blackhole
   - fault target: a random permutation of the 6 target services (+1 random pick) per block
@@ -31,8 +31,10 @@ import arcenv
 
 TARGETS = arcenv.PILOT_TARGETS
 ACTIONS = ["restart-pod", "rollout-restart", "scale-up", "cpu-bump", "drain", "noop", "noop"]
-# Defaults; override per machine after harness/dose_check.py:  plan --delay 50,100 --loss 5,15 --squeeze 3,1.5
-LEVELS = {"network-delay": [50, 100], "net-loss": [5, 15], "cpu-squeeze": [3, 1.5]}
+# Defaults, from the laptop dose check of 2026-10-07 at 2 req/s (share of user requests that went bad):
+#   delay 25 ms 31 %, 50 ms 31 %, 100 ms 73 % | loss 5 % 0 %, 15 % 12 %, 30 % 59 % | squeeze 3x 0 %, 1.5x 8-20 %, 1x 70 %
+# Measure them again on every new machine (harness/dose_check.py) and override:  plan --delay .. --loss .. --squeeze ..
+LEVELS = {"network-delay": [25, 75], "net-loss": [15, 30], "cpu-squeeze": [1.5, 1]}
 HARD = [("network-delay", 300), ("cpu-squeeze", 0.5), ("blackhole", None)]
 PLANS = os.path.join(arcenv.DATA, "plans")
 os.makedirs(PLANS, exist_ok=True)
@@ -254,10 +256,10 @@ def main():
     pl.add_argument("--seed", type=int); pl.add_argument("--hard", action="store_true")
     pl.add_argument("--delay-max", type=int, default=300); pl.add_argument("--force", action="store_true")
     num = lambda v: [float(x) if "." in x else int(x) for x in v.split(",")]
-    pl.add_argument("--delay", type=num, default=LEVELS["network-delay"], help="network-delay levels in ms, e.g. 50,100")
-    pl.add_argument("--loss", type=num, default=LEVELS["net-loss"], help="net-loss levels in percent, e.g. 5,15")
+    pl.add_argument("--delay", type=num, default=LEVELS["network-delay"], help="network-delay levels in ms, e.g. 25,75")
+    pl.add_argument("--loss", type=num, default=LEVELS["net-loss"], help="net-loss levels in percent, e.g. 15,30")
     pl.add_argument("--squeeze", type=num, default=LEVELS["cpu-squeeze"],
-                    help="cpu-squeeze levels: CPU limit as a multiple of the service's recent average use, e.g. 3,1.5")
+                    help="cpu-squeeze levels: CPU limit as a multiple of the service's recent average use, e.g. 1.5,1")
     for nm in ("run", "status"):
         s = sub.add_parser(nm); s.add_argument("--name", default="main")
     a = p.parse_args()
