@@ -36,9 +36,10 @@ E_COLS = ["episode_id", "cluster", "host", "recorded", "status", "discard_reason
           "fault_target", "action", "action_target", "action_on_fault_target", "delay_s", "load_rate",
           "stalled", "saturated_before_action", "services_harm", "services_no_harm", "services_inconclusive",
           "services_no_data", "collateral_harmed", "collateral_peak_sum_pts", "collateral_mean_sum_pts",
-          "user_damage_pts", "healthy_after", "recovery_after_s", "folder"]
+          "user_damage_pts", "user_damage_abs500_pts", "user_damage_abs1000_pts", "collateral_peak_sum_abs1000_pts",
+          "users_bad_before_abs1000_pct", "healthy_after", "recovery_after_s", "folder"]
 S_COLS = ["episode_id", "service", "is_action_target", "is_fault_target", "verdict", "requests_before",
-          "requests_after", "bad_before_pct", "bad_after_pct", "y_mean_pts", "y_peak_pts", "y_excess_requests",
+          "requests_after", "bad_before_pct", "bad_after_pct", "y_mean_pts", "y_peak_pts", "y_mean_abs500_pts", "y_peak_abs500_pts", "y_mean_abs1000_pts", "y_peak_abs1000_pts", "y_excess_requests",
           "t_recover_s", "recovered_by_end"]
 erows, srows = [], []
 for root in roots:
@@ -65,6 +66,9 @@ for root in roots:
             "services_inconclusive": v.count("inconclusive"), "services_no_data": v.count("no_data"),
             "collateral_harmed": sm.get("collateral_harmed", ""), "collateral_peak_sum_pts": pts(sm.get("collateral_peak_sum")),
             "collateral_mean_sum_pts": pts(sm.get("collateral_mean_sum")), "user_damage_pts": pts(sm.get("user_damage")),
+            "user_damage_abs500_pts": pts(sm.get("user_damage_abs500")), "user_damage_abs1000_pts": pts(sm.get("user_damage_abs1000")),
+            "collateral_peak_sum_abs1000_pts": pts(sm.get("collateral_peak_sum_abs1000")),
+            "users_bad_before_abs1000_pct": pts(sm.get("users_bad_before_abs1000")),
             "healthy_after": "" if m.get("healthy_after") is None else int(bool(m.get("healthy_after"))),
             "recovery_after_s": m.get("recovery_after_s", ""), "folder": d})
         for s, r in svcs.items():
@@ -74,6 +78,10 @@ for root in roots:
                 "requests_before": r.get("N_B1L"), "requests_after": r.get("N_M"),
                 "bad_before_pct": pts(r.get("p_B1L")), "bad_after_pct": pts(r.get("p_M")),
                 "y_mean_pts": pts(r.get("y_mean")), "y_peak_pts": pts(r.get("y_peak")),
+                "y_mean_abs500_pts": pts((r.get("abs", {}).get("500") or {}).get("y_mean")),
+                "y_peak_abs500_pts": pts((r.get("abs", {}).get("500") or {}).get("y_peak")),
+                "y_mean_abs1000_pts": pts((r.get("abs", {}).get("1000") or {}).get("y_mean")),
+                "y_peak_abs1000_pts": pts((r.get("abs", {}).get("1000") or {}).get("y_peak")),
                 "y_excess_requests": "" if r.get("y_excess") is None else round(r["y_excess"], 1),
                 "t_recover_s": r.get("t_recover_s", ""),
                 "recovered_by_end": "" if r.get("recovered_by_end") is None else int(r["recovered_by_end"])})

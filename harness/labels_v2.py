@@ -24,6 +24,12 @@ Stalls (whole-system freezes seen by the load generator) are cut out of B1L and 
 Per client flow (search / orders / book / pay) the same bad-ratio is computed from what users saw;
 that is the only place Train Ticket's HTTP-200 business failures are visible.
 
+A second set of labels uses FIXED thresholds (ABS_T_MS, 500 ms and 1 s) instead of each machine's own
+healthy speed: the fields under "abs". The main labels answer "how much worse than normal on this
+machine"; on a fast machine a 150 ms answer already counts as bad. The absolute ones answer "how many
+requests got slow enough for a user to notice", and mean the same on every machine, so datasets from
+different machines can be compared (laptop pilot vs lab). Both are computed from the same raw data.
+
 Each label also carries `saturated_before_action` (users already >= 80% bad in the baseline) and a
 `summary` of magnitudes: collateral_peak_sum / collateral_mean_sum over services other than the
 action and fault targets, and user_damage (rise of the bad ratio summed over client flows).
@@ -38,6 +44,7 @@ DELTA = 0.05                      # a 5-point rise in the bad-request ratio is "
 BLOCK_S, STEP = 30, 5
 B1L_S = 60
 LAT_FLOOR_MS = 100
+ABS_T_MS = [500, 1000]            # fixed "a user notices" thresholds; must be histogram bucket boundaries
 FALLBACK_T_MS = 1000
 STALL_TIMEOUTS, STALL_MEDIAN_MS, SLICE_S, STALL_PAD = 2, 1000, 15, 5
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -110,9 +117,10 @@ def threshold(slo, svc, op):
     return slo.get(svc, {}).get(op, {}).get("T_ms", FALLBACK_T_MS)
 
 
-def per_step_counts(incs, svc, slo):
+def per_step_counts(incs, svc, slo, fixed_T=None):
     """-> {t: [N, X]} for one service. Bucket counters are cumulative by le, so for each (op, status):
-    N = the +Inf bucket, slow = N - bucket(le = T). Errors are all bad."""
+    N = the +Inf bucket, slow = N - bucket(le = T). Errors are all bad.
+    fixed_T (ms): use this threshold for every operation instead of the calibrated per-operation one."""
     by = defaultdict(lambda: defaultdict(float))    # (t, op, status) -> {le: inc}
     caller = defaultdict(float)
     for t, op, st, le, x in incs:
@@ -126,7 +134,7 @@ def per_step_counts(incs, svc, slo):
         if st == "error":
             bad = n
         else:
-            T = threshold(slo, svc, op)
+            T = fixed_T if fixed_T is not None else threshold(slo, svc, op)
             under = sum(v for le, v in les.items() if le not in ("+Inf", "") and abs(float(le) - T) < 1e-6)
             bad = max(n - under, 0.0)
         steps[t][0] += n
@@ -232,6 +240,20 @@ def label_episode(d, slo=None, cal=None):
             rec["verdict"] = "no_harm"
         else:
             rec["verdict"] = "inconclusive"
+        rec["abs"] = {}
+        for T in ABS_T_MS:               # same windows and blocks, fixed threshold
+            sa = per_step_counts(incs[svc], svc, slo, fixed_T=T)
+            nb, xb = pooled(sa, b1l)
+            nm, xm = pooled(sa, m_ok)
+            if not nb or not nm:
+                continue
+            pk = []
+            for a, bb in blocks:
+                n, x = pooled(sa, lambda t, a=a, bb=bb: a < t <= bb and not in_stall(t))
+                if n:
+                    pk.append(smooth(x, n) - smooth(xb, nb))
+            rec["abs"][str(T)] = {"p_B1L": xb / nb, "p_M": xm / nm, "y_mean": xm / nm - xb / nb,
+                                  "y_peak": max(pk) if pk else None}
         out[svc] = rec
 
     flows = client_flows(rows, t_act, m0, m1, slo, in_stall)
@@ -246,12 +268,17 @@ def label_episode(d, slo=None, cal=None):
         "collateral_harmed": sum(v["verdict"] == "harm" for v in coll),
         "user_damage": sum(max(0.0, f["y_mean"]) for f in flows.values() if f.get("y_mean") is not None),
     }
+    for T in ABS_T_MS:
+        k = str(T)
+        summary[f"collateral_peak_sum_abs{k}"] = sum(max(0.0, (v.get("abs", {}).get(k) or {}).get("y_peak") or 0.0) for v in coll)
+        summary[f"user_damage_abs{k}"] = sum(max(0.0, (f.get("abs", {}).get(k) or {}).get("y_mean") or 0.0) for f in flows.values())
+        summary[f"users_bad_before_abs{k}"] = max([(f.get("abs", {}).get(k) or {}).get("p_B1L") or 0.0 for f in flows.values()] or [0.0])
     labels = {"episode_id": meta.get("episode_id"), "label_version": VERSION,
               "fault": meta.get("fault_type"), "fault_target": meta.get("fault_target"),
               "action": meta.get("action_type"), "action_target": meta.get("action_target"),
               "stalled": stalled, "stall_cut": {"M": round(m_cut, 2), "B1L": round(b_cut, 2)},
               "stall_slices_seen": len(stalls_seen), "stall_rule": "cut only when fault == none (v2.1)",
-              "params": {"DELTA": DELTA, "z": z, "B1L_S": B1L_S, "BLOCK_S": BLOCK_S,
+              "params": {"DELTA": DELTA, "z": z, "B1L_S": B1L_S, "BLOCK_S": BLOCK_S, "ABS_T_MS": ABS_T_MS,
                          "slo_table": bool(slo), "calibrated": os.path.exists(CAL_FILE)},
               "saturated_before_action": saturated, "summary": summary,
               "services": out, "client_flows": flows}
@@ -271,7 +298,13 @@ def client_flows(rows, t_act, m0, m1, slo, in_stall):
         nB, xB = ratio(lambda t: t_act - B1L_S < t <= t_act)
         nM, xM = ratio(lambda t: m0 < t <= m1)
         res[op] = {"N_B1L": nB, "N_M": nM, "p_B1L": xB / nB if nB else None, "p_M": xM / nM if nM else None,
-                   "y_mean": (xM / nM - xB / nB) if nB and nM else None, "T_ms": T}
+                   "y_mean": (xM / nM - xB / nB) if nB and nM else None, "T_ms": T, "abs": {}}
+        for Ta in ABS_T_MS:
+            T = Ta                       # ratio() reads T
+            _, xb = ratio(lambda t: t_act - B1L_S < t <= t_act)
+            _, xm = ratio(lambda t: m0 < t <= m1)
+            if nB and nM:
+                res[op]["abs"][str(Ta)] = {"p_B1L": xb / nB, "p_M": xm / nM, "y_mean": xm / nM - xb / nB}
     return res
 
 
