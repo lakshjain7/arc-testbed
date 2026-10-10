@@ -32,7 +32,7 @@ import arcenv
 TARGET = {"network-delay": "ts-seat-service", "net-loss": "ts-travel-service", "cpu-squeeze": "ts-station-service"}
 # the squeeze is sized from each service's own CPU use, so test a quiet and a busy target
 CANDIDATES = [("network-delay", TARGET["network-delay"], [25, 75]), ("net-loss", TARGET["net-loss"], [15, 30]),
-              ("cpu-squeeze", "ts-station-service", [1.5, 1]), ("cpu-squeeze", "ts-order-service", [1.5, 1])]
+              ("cpu-squeeze", "ts-station-service", [3, 2.5, 2]), ("cpu-squeeze", "ts-order-service", [3, 2.5, 2])]
 BASE_S, ON_S, MEASURE_S, REST_S = 60, 90, 60, 45
 
 
@@ -86,6 +86,12 @@ def main():
     print(f"  {'fault':14s} {'level':>6s} {'on':24s} {'requests':>8s} {'failed':>7s} {'LABEL bad':>10s} {'2xP95 bad':>10s}  "
           f"{'median ms':>16s}  verdict", flush=True)
     results = []
+    # CPU use of each squeeze target, measured once now while everything is healthy. Measuring it again
+    # between levels gives nonsense: after a squeeze the service works off its backlog and looks busier.
+    healthy_use = {t: R.prom_scalar(f'sum(rate(container_cpu_usage_seconds_total{{container="{t}"}}[2m]))')
+                   for f, t, _ in cands if f == "cpu-squeeze"}
+    for t, u in healthy_use.items():
+        print(f"healthy CPU use of {t[3:-8]}: {1000 * (u or 0):.0f}m", flush=True)
     for fault, target, levels in cands:
         for lvl in levels:
             t0 = time.time()
@@ -97,7 +103,7 @@ def main():
                 thr[op] = 2 * v if v else 2000
             uid0, rc0 = restarts(target)
             name = f"arc-dose-{fault}-{str(lvl).replace('.', '-')}"
-            okf, info = R.apply_fault(fault, target, name, lvl)
+            okf, info = R.apply_fault(fault, target, name, lvl, used=healthy_use.get(target) if fault == "cpu-squeeze" else None)
             t_on = time.time()
             try:
                 time.sleep(ON_S)

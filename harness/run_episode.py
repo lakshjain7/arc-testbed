@@ -308,7 +308,7 @@ CHAOS_KIND = {"pod-kill": "podchaos", "network-delay": "networkchaos", "net-loss
 # Default levels. The pilot's 300 ms delay, 1/4-CPU squeeze and blackhole SATURATED the system (users
 # >= 80% bad before the action in 39% of episodes), which hides the action's effect. Milder defaults;
 # the campaign draws from several levels per fault (harness/run_campaign.py).
-FAULT_DEFAULT_PARAM = {"network-delay": 50, "net-loss": 15, "cpu-squeeze": 1.5}
+FAULT_DEFAULT_PARAM = {"network-delay": 50, "net-loss": 15, "cpu-squeeze": 2.5}
 
 
 def chaos_cr(fault, target, name, param):
@@ -366,7 +366,14 @@ def set_cpu_limit(target, cpu, request=None):
     return False, name
 
 
-def apply_fault(fault, target, name, param):
+def restart_info(svc):
+    """(pod uid, container restart count) of a service's pod; (None, 0) when there is none."""
+    p = pod_of(svc)
+    cs = ((p or {}).get("status", {}).get("containerStatuses") or [{}])[0]
+    return (p or {}).get("metadata", {}).get("uid"), cs.get("restartCount", 0)
+
+
+def apply_fault(fault, target, name, param, used=None):
     """Apply and VERIFY the fault (a silent no-op would corrupt the label). Returns (verified, info)."""
     if fault == "none":
         return True, {}
@@ -375,9 +382,12 @@ def apply_fault(fault, target, name, param):
         # squeeze bites equally hard on busy and quiet services (station uses ~0.03 cores, order ~0.3).
         # A JVM needs short bursts far above its average: a level below ~1 leaves it unable to answer
         # at all (0.5 and 0.35 gave station 90 % bad requests, 2026-10-07). CPU starvation is a cliff:
-        # 3x = no effect, 1.5x = 8-20 % bad, 1x = 70 % bad. Use levels between 1 and 2.
+        # with use measured while healthy, 3x = 0-3 % bad, 2x = 55-100 %, 1.5x = 75-80 % (laptop, 2 req/s).
+        # Use one level between 2 and 3, checked with dose_check.py on a busy and a quiet service.
         frac = float(param or FAULT_DEFAULT_PARAM[fault])
-        used = prom_scalar(f'sum(rate(container_cpu_usage_seconds_total{{container="{target}"}}[2m]))') or 0.1
+        # `used` can be passed in (dose_check measures it once while the service is healthy: right after
+        # a previous squeeze the 2-minute average is inflated by the catch-up burst).
+        used = used or prom_scalar(f'sum(rate(container_cpu_usage_seconds_total{{container="{target}"}}[2m]))') or 0.1
         lim = f"{max(SQUEEZE_MIN_M, int(used * 1000 * frac))}m"
         ok, pod = set_cpu_limit(target, lim, request=lim if cpu_millis(lim) < 100 else None)
         return ok, {"kind": "in-place resize", "pod": pod, "cpu_limit": lim, "fraction": frac,
@@ -433,7 +443,7 @@ def main():
     p.add_argument("--fault", default="none", choices=FAULTS)
     p.add_argument("--fault-target")
     p.add_argument("--fault-param", help="level: network-delay = latency ms (default 100); net-loss = percent "
-                                         "(default 15); cpu-squeeze = CPU limit as a multiple of recent average use (default 1.5)")
+                                         "(default 15); cpu-squeeze = CPU limit as a multiple of recent average use (default 2.5)")
     p.add_argument("--action", choices=ACTIONS)
     p.add_argument("--target", help="action target service (default: random from the pilot set)")
     p.add_argument("--delay", type=float, help="seconds from fault to action (default: random 60-300)")
@@ -497,6 +507,7 @@ def main():
         t_fault = time.time()
         f_ok, f_info = apply_fault(a.fault, fault_target, chaos_name, a.fault_param)
         meta.update(fault_applied_at=t_fault, fault_verified=f_ok, fault_info=f_info)
+        rs0 = restart_info(fault_target)        # after the fault is on (a pod-kill has already replaced the pod)
         log(f"fault {a.fault} on {fault_target} verified={f_ok} {f_info}; waiting {delay:.0f}s")
         if not f_ok:
             meta.update(status="discarded", discard_reason="fault not verified")
@@ -524,6 +535,12 @@ def main():
         log(f"M (after the action, {M_S}s)"); wait_until(m[1])
     finally:
         t_rm = time.time()
+        # Did the fault target's container crash or its pod get replaced while the fault was on? A CPU
+        # squeeze or a network fault that tips a service into a restart is a different, harsher incident.
+        if locals().get("rs0") and a.fault != "none":
+            rs1 = restart_info(fault_target)
+            meta["fault_target_pod_replaced"] = rs1[0] != rs0[0]
+            meta["fault_target_container_restarts"] = None if rs1[0] != rs0[0] else rs1[1] - rs0[1]
         clean = remove_fault(a.fault, chaos_name, fault_target)
         meta.update(fault_removed_at=t_rm, fault_teardown_clean=clean)
         if applied_action_needs_reset(locals()):
