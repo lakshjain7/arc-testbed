@@ -11,9 +11,11 @@ off -> rest. Two definitions of a "bad" request are reported:
   LABEL   failed, or slower than the calibrated threshold of that user flow (the definition the labels
           use: max(100 ms, healthy q99), from calibration/slo_thresholds.json). Decide with this one.
           Shown as "-" before calibration has run.
-  2xP95   failed, or slower than twice that flow's 95th percentile in the 60 s just before. On a fast
-          machine this bar is very low (35 ms requests -> anything over ~150 ms is "bad"), so it
-          overstates the damage there. Use it only when there is no calibration yet.
+  2xP95   failed, or slower than twice that flow's 95th percentile in the 60 s just before. A rough
+          stand-in for use before calibration exists.
+Both bars follow the machine's own healthy speed, so on a fast machine (35 ms requests) a 150 ms answer
+already counts as bad although no user would notice. That is intended for the labels (damage relative
+to normal), but keep it in mind when reading the percentages.
 Needs the continuous load generator (python3 loadgen/loadgen.py --rate N &, wait 5 min).
 
   dose_check.py                                             the default candidates below (~35 min)
