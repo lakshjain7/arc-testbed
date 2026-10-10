@@ -61,6 +61,17 @@ nodes:
 YAML
     kind create cluster --config "$CACHE/kind-$ARC_CLUSTER.yaml" --image kindest/node:v1.34.0 --wait 180s || exit 1
   fi
+  # Cap the open-files limit of containers on every node. On a new Docker Desktop the nodes' containerd
+  # runs with LimitNOFILE=infinity (2^31 here); MySQL 5.7 sizes its tables from that number, asks for
+  # gigabytes, and is OOM-killed in a loop with an empty log (lab machine, 2026-10-10: 20 restarts in
+  # 28 min). Only containers started after this get the cap, so it must happen before anything is deployed.
+  for n in $(NODES); do
+    docker exec "$n" sh -c 'f=/etc/systemd/system/containerd.service.d/10-nofile.conf; [ -f "$f" ] && exit 0
+      mkdir -p "$(dirname "$f")" && printf "[Service]\nLimitNOFILE=1048576\n" > "$f" && systemctl daemon-reload && systemctl restart containerd' \
+      || say "WARNING: could not cap the open-files limit on $n"
+  done
+  for _ in $(seq 1 30); do kubectl --context "$KCTX" get nodes >/dev/null 2>&1 && break; sleep 2; done
+  kubectl --context "$KCTX" wait --for=condition=Ready nodes --all --timeout=120s >/dev/null
   if [ "${ARC_FIX_DNS:-0}" = 1 ]; then
     for n in $(NODES); do docker exec "$n" sh -c 'printf "nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:2 attempts:5\n" > /etc/resolv.conf'; done
     say "node DNS set to 8.8.8.8"
@@ -117,6 +128,8 @@ stage_deploy() {
   until [ "$($K get job train-ticket-deploy -o jsonpath='{.status.succeeded}' 2>/dev/null)" = "1" ]; do
     [ $(( $(date +%s) - t0 )) -gt 3600 ] && { say "deploy job not finished after 60 min; see: $K logs job/train-ticket-deploy"; exit 1; }
     say "  deploy job running: $($K get pods --no-headers 2>/dev/null | grep -vc Completed) pods, $($K get deploy --no-headers 2>/dev/null | wc -l) deployments | $($K logs job/train-ticket-deploy --tail=1 2>/dev/null | cut -c1-90)"
+    # a database pod that keeps restarting will never let the job finish: say so instead of waiting an hour
+    $K get pods --no-headers 2>/dev/null | awk '$1 ~ /mysql|nacos-[0-9]|rabbitmq/ && $4+0 >= 5 {print "     WARNING: " $1 " has restarted " $4 " times (" $3 "). See docs/RUNBOOK.md, \"MySQL OOMKilled in a loop\"."}'
     sleep 30
   done
   sleep 8; kill $TAMER 2>/dev/null; trap - EXIT

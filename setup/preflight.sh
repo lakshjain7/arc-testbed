@@ -20,7 +20,13 @@ elif [ "$MEM" -ge 15000 ]; then ok "memory" "$((MEM/1024)) GB total, $((AV/1024)
 else bad "memory" "$((MEM/1024)) GB total; one cluster needs ~14 GB"; fi
 [ "$AV" -ge 14000 ] || wr "memory available now" "$((AV/1024)) GB; close other programs (a cluster needs ~14 GB)"
 DISK=$(df -BG --output=avail "$HOME" | tail -1 | tr -dc 0-9)
-[ "$DISK" -ge 60 ] && ok "disk free in home" "${DISK} GB" || { [ "$DISK" -ge 35 ] && wr "disk free in home" "${DISK} GB (60+ recommended)" || bad "disk free in home" "${DISK} GB (images need ~30 GB)"; }
+# Under WSL, $HOME sits on a virtual disk whose "free space" is only its ceiling. What can really be
+# written is what is free on the Windows drive that holds it (and Docker's own disk image).
+if grep -qi microsoft /proc/version 2>/dev/null && [ -d /mnt/c ]; then
+  WIN=$(df -BG --output=avail /mnt/c 2>/dev/null | tail -1 | tr -dc 0-9)
+  [ -n "$WIN" ] && [ "$WIN" -lt "$DISK" ] && DISK=$WIN && DISKNOTE=" (free on the Windows C: drive, which is the real limit)"
+fi
+[ "$DISK" -ge 90 ] && ok "disk free" "${DISK} GB${DISKNOTE:-}" || { [ "$DISK" -ge 60 ] && wr "disk free" "${DISK} GB${DISKNOTE:-} (90+ recommended: a running cluster holds ~45 GB of images)" || bad "disk free" "${DISK} GB${DISKNOTE:-} (a running cluster holds ~45 GB of images, plus Docker's cache)"; }
 if grep -qi microsoft /proc/version 2>/dev/null; then
   WSL=1; ok "system" "Ubuntu inside WSL2 on Windows ($(. /etc/os-release; echo "$PRETTY_NAME"))"
   case "$PWD" in /mnt/*) bad "folder" "you are under /mnt/ (Windows disk, 10x slower). Clone the repo into ~ instead";; *) ok "folder" "inside Ubuntu's own disk";; esac

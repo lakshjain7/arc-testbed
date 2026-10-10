@@ -48,8 +48,11 @@ command -v helm >/dev/null || { curl -fsSL https://raw.githubusercontent.com/hel
 helm version --short
 
 echo "== kernel settings (several kind clusters need more inotify watches; less eager swapping)"
-sudo sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512 vm.swappiness=10 >/dev/null && echo "   set (until reboot)"
-printf 'fs.inotify.max_user_watches=524288\nfs.inotify.max_user_instances=512\nvm.swappiness=10\n' | sudo tee /etc/sysctl.d/99-arc.conf >/dev/null
+# only ever raise the inotify limits (the first version lowered a host that already had 1048576)
+W=$(cat /proc/sys/fs/inotify/max_user_watches); [ "$W" -lt 524288 ] && W=524288
+I=$(cat /proc/sys/fs/inotify/max_user_instances); [ "$I" -lt 512 ] && I=512
+sudo sysctl -w fs.inotify.max_user_watches=$W fs.inotify.max_user_instances=$I vm.swappiness=10 >/dev/null && echo "   set (until reboot): watches $W, instances $I"
+printf 'fs.inotify.max_user_watches=%s\nfs.inotify.max_user_instances=%s\nvm.swappiness=10\n' "$W" "$I" | sudo tee /etc/sysctl.d/99-arc.conf >/dev/null
 
 echo "== checks the faults depend on"
 echo "   cgroup: $(stat -fc %T /sys/fs/cgroup)   (cgroup2fs expected)"

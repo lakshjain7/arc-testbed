@@ -48,6 +48,27 @@ The decisive test (30 seconds): run a pod whose image is already on the node, wi
 
 **After Nacos restarts, allow ~40–60 s for services to re-register** before measuring anything. Search returned `503` for about 60 s after the rolling restart and then recovered on its own.
 
+## MySQL OOMKilled in a loop on a fresh cluster: the open-files limit (lab machine, 2026-10-10)
+
+**Symptom.** During stage `deploy`, `nacosdb-mysql-0` (or `tsdb-mysql-*`) restarts again and again with exit
+code 137 (OOMKilled) and an **empty log**; the deploy job never finishes. 20 restarts in 28 minutes on the lab machine.
+
+**Cause.** With a recent Docker Desktop (4.94), containerd inside the kind nodes runs with `LimitNOFILE=infinity`
+and the host allows 2^31 open files, so every container sees an open-files limit of about 2 billion. MySQL 5.7
+sizes internal tables from that limit and asks for far more memory than the pod may use. (The link to MySQL's
+sizing is inferred from the fix working; no MySQL log line was captured. It did not happen with Docker Desktop
+4.55 on the laptop.)
+
+**Fix.** Cap the limit on every node, then recreate the pod. `setup/setup-cluster.sh` now does this in stage
+`cluster`, before anything is deployed; on an existing cluster:
+```bash
+for n in $(kind get nodes --name arc); do
+  docker exec $n sh -c 'mkdir -p /etc/systemd/system/containerd.service.d && printf "[Service]\nLimitNOFILE=1048576\n" > /etc/systemd/system/containerd.service.d/10-nofile.conf && systemctl daemon-reload && systemctl restart containerd'
+done
+kubectl --context kind-arc -n train-ticket delete pod nacosdb-mysql-0     # only new containers get the new limit
+```
+The pod was healthy 65 seconds later. Check a container's limit with `kubectl exec <pod> -- sh -c 'ulimit -n'`.
+
 ## Never restart many services at once on this box
 
 **Confirmed twice on 2026-09-27, with data, not a guess.** Restarting more than ~3-4 heavy Java services simultaneously does not "just take longer" — it causes a genuine, self-sustaining crash loop that does NOT resolve by waiting. What happens: every JVM tries to register with the single-node Nacos at once, Nacos can't keep up, registration fails, the app throws a fatal startup exception and the container dies, kubelet restarts it, and it hits the same overloaded Nacos again. Watched restart counts climb from 11 to 53 over 15 minutes of pure waiting with zero improvement in readiness — passive waiting made it worse, not better, because the same services kept recreating the overload.

@@ -290,7 +290,8 @@ def fault_on_new_pod(fault, chaos_name, target):
 # processes run outside the target container on kind + cgroup v2 (target never throttled, whole host at
 # load 25, every service timing out). cpu-squeeze replaces it: the target's CPU limit is cut in place.
 FAULTS = ["none", "pod-kill", "network-delay", "net-loss", "cpu-squeeze", "blackhole", "cpu-stress"]
-SQUEEZE_MIN_M = 25        # never squeeze below 25 millicores (lower was never tested; a starved JVM may fail its liveness probe)
+SQUEEZE_MIN_M = 10        # 10m is the smallest CPU quota Kubernetes enforces. Was 25m: on a fast machine the quiet
+                          # services use 6-17m, so every level hit the floor and gave the same limit (lab, 2026-10-10)
 
 
 def prom_scalar(q):
@@ -370,7 +371,7 @@ def apply_fault(fault, target, name, param):
     if fault == "none":
         return True, {}
     if fault == "cpu-squeeze":
-        # CPU limit = level x what the service used on AVERAGE over the last 2 min (floor 25m), so the
+        # CPU limit = level x what the service used on AVERAGE over the last 2 min (floor 10m), so the
         # squeeze bites equally hard on busy and quiet services (station uses ~0.03 cores, order ~0.3).
         # A JVM needs short bursts far above its average: a level below ~1 leaves it unable to answer
         # at all (0.5 and 0.35 gave station 90 % bad requests, 2026-10-07). CPU starvation is a cliff:

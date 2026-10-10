@@ -70,6 +70,11 @@ Everything runs inside Ubuntu-on-Windows (WSL2), exactly as on the laptop.
 3. **Install Docker Desktop** (docker.com), start it, then
    Settings -> Resources -> WSL integration -> switch on "Ubuntu" -> Apply & restart.
    Settings -> General -> switch **off** "Resource Saver" (it pauses the cluster when idle).
+   If the machine has other WSL distros that are not ours: Docker Desktop switches on integration with
+   the *default* distro at its first start. In the same WSL integration screen, switch **off** "Enable
+   integration with my default WSL distro" so that only Ubuntu is touched.
+   Disk: a running cluster holds about 45 GB of images on the Windows drive (measured on the lab machine);
+   have 90 GB free on it before you start.
 
 4. **Stop Windows from sleeping:** Settings -> System -> Power -> Sleep: Never. Sleep breaks Docker
    (it did on the laptop, twice).
