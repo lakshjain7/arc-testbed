@@ -7,8 +7,11 @@ waits for each reply before sending the next, so when a fault slows the system i
 quietly sends less traffic and hides the damage. Open-loop keeps the offered load
 constant, which is what a before/after (B1 vs M) comparison needs.
 
-Traffic mix (default): search 55%, view orders 15%, book 20%, pay 10%.
-Bookings never ask for food or insurance (those services are switched off).
+Traffic mix (default, "core"): search 55%, view orders 15%, book 20%, pay 10%. These four flows
+touch the 20 core services. Bookings never ask for food or insurance.
+More flows exist for the wider system (batch 2); each needs extra services running:
+  search2 / book2 / orders2   the slower train types (K, Z, T): ts-travel2-service, ts-preserve-other-service
+A mix is given as --mix (or ARC_MIX) either by name ("core", "wide") or in full ("search=40,book=15,...").
 
 Outputs, under --out (default <ARC_DATA_ROOT>/<ARC_CLUSTER>/loadgen, i.e. ~/arc-data/arc/loadgen):
   run-<timestamp>/requests.jsonl  one line per request: when, what, HTTP code, ms, business ok
@@ -31,6 +34,17 @@ ROUTES = [
     ("nanjing", "suzhou", ["G1234", "G1236"]),
     ("nanjing", "wuxi", ["G1234"]),
 ]
+# The same for the other train types (travel2), checked 2026-10-11.
+ROUTES2 = [
+    ("shanghai", "nanjing", ["Z1234"]), ("shanghai", "taiyuan", ["T1235", "Z1234"]), ("nanjing", "taiyuan", ["Z1234"]),
+    ("nanjing", "beijing", ["Z1235"]), ("nanjing", "xuzhou", ["Z1235"]), ("xuzhou", "beijing", ["Z1235"]),
+    ("taiyuan", "shanghai", ["Z1236"]), ("taiyuan", "shijiazhuang", ["Z1236"]), ("shijiazhuang", "shanghai", ["Z1236"]),
+    ("shanghaihongqiao", "hangzhou", ["K1345"]), ("shanghaihongqiao", "jiaxingnan", ["K1345"]), ("jiaxingnan", "hangzhou", ["K1345"]),
+]
+MIXES = {
+    "core": "search=55,orders=15,book=20,pay=10",
+    "wide": "search=40,search2=13,orders=10,orders2=5,book=14,book2=6,pay=12",
+}
 USER, PASSWORD = "fdse_microservice", "111111"
 PAY_MAX_AGE_S = 300
 
@@ -93,12 +107,15 @@ class Generator:
         # entries starved the pay flow for 10 minutes at a time: 13 of 52 pilot episodes had no payment.)
         self.unpaid = deque()
         self.claimed = set()                     # orders already queued or paid, so none is paid twice
-        self.baselined = False                   # first look at the list: what is already there is old, skip it
+        self.baselined = set()                   # order lists looked at once: what was already there is old, skip it
         self.recent = deque()                    # (t_end, op, ok, ms) for the rolling summary
         self.lock = threading.Lock()
         self.inflight = 0
         self.totals = {"sent": 0, "ok": 0, "failed": 0, "shed": 0}
-        ops, weights = zip(*[(k, float(v)) for k, v in (x.split("=") for x in a.mix.split(","))])
+        ops, weights = zip(*[(k, float(v)) for k, v in (x.split("=") for x in MIXES.get(a.mix, a.mix).split(","))])
+        for o in ops:
+            if not hasattr(self, "op_" + o):
+                sys.exit(f"unknown flow '{o}' in --mix")
         self.ops, self.weights = ops, weights
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         self.run_dir = os.path.join(os.path.expanduser(a.out), "run-" + stamp)
@@ -118,8 +135,8 @@ class Generator:
         ok = bool(b) and b.get("status") == 1 and len(b.get("data") or []) > 0
         return code, ok, dt, f"{frm}-{to}", None if ok else _why(b)
 
-    def op_orders(self):
-        code, b, dt = call(self.a.base, "POST", "/api/v1/orderservice/order/refresh",
+    def _order_list(self, path, kind):
+        code, b, dt = call(self.a.base, "POST", path,
                            {"loginId": self.s.user_id, "enableStateQuery": False,
                             "enableTravelDateQuery": False, "enableBoughtDateQuery": False},
                            self.s.token, self.a.timeout)
@@ -130,22 +147,40 @@ class Generator:
                 for o in (b.get("data") or []):
                     if o.get("status") == 0 and o.get("id") and o["id"] not in self.claimed:
                         self.claimed.add(o["id"])
-                        if self.baselined:           # new since the previous look, so it is fresh
+                        if kind in self.baselined:   # new since the previous look, so it is fresh
                             self.unpaid.append((o["id"], o.get("trainNumber"), now))
-                self.baselined = True
+                self.baselined.add(kind)
         return code, ok, dt, "", None if ok else _why(b)
 
-    def op_book(self):
-        frm, to, trains = self.rng.choice(ROUTES)
+    def op_orders(self):
+        return self._order_list("/api/v1/orderservice/order/refresh", "orders")
+
+    def op_orders2(self):                         # orders on the other train types live in their own service
+        return self._order_list("/api/v1/orderOtherService/orderOther/refresh", "orders2")
+
+    def _book(self, path, routes):
+        frm, to, trains = self.rng.choice(routes)
         train = self.rng.choice(trains)
         body = {"accountId": self.s.user_id, "contactsId": self.rng.choice(self.s.contacts or [""]),
                 "tripId": train, "seatType": self.rng.choice([2, 3]), "loginToken": self.s.token,
                 "date": self._date(1, 30), "from": frm, "to": to,
                 "assurance": 0, "foodType": 0, "isWithin": False}
-        code, b, dt = call(self.a.base, "POST", "/api/v1/preserveservice/preserve", body, self.s.token,
-                           self.a.timeout)
+        code, b, dt = call(self.a.base, "POST", path, body, self.s.token, self.a.timeout)
         ok = bool(b) and b.get("status") == 1
         return code, ok, dt, f"{train}:{frm}-{to}", None if ok else _why(b)
+
+    def op_book(self):
+        return self._book("/api/v1/preserveservice/preserve", ROUTES)
+
+    def op_book2(self):
+        return self._book("/api/v1/preserveotherservice/preserveOther", ROUTES2)
+
+    def op_search2(self):
+        frm, to, _ = self.rng.choice(ROUTES2)
+        code, b, dt = call(self.a.base, "POST", "/api/v1/travel2service/trips/left",
+                           {"startPlace": frm, "endPlace": to, "departureTime": self._date(1, 7)}, self.s.token, self.a.timeout)
+        ok = bool(b) and b.get("status") == 1 and len(b.get("data") or []) > 0
+        return code, ok, dt, f"{frm}-{to}", None if ok else _why(b)
 
     def op_pay(self):
         oid, train, _ = self.unpaid.popleft()     # run() only picks "pay" when a fresh order exists
@@ -273,7 +308,8 @@ def main():
                         os.environ.get("ARC_CLUSTER", "arc"), "loadgen")
     p.add_argument("--base", default=f"http://localhost:{ui_port}", help="Train Ticket UI address")
     p.add_argument("--rate", type=float, default=2.0, help="requests started per second (open-loop)")
-    p.add_argument("--mix", default="search=55,orders=15,book=20,pay=10")
+    p.add_argument("--mix", default=os.environ.get("ARC_MIX", "core"),
+                   help="'core' (default), 'wide', or flows with weights, e.g. search=55,orders=15,book=20,pay=10")
     p.add_argument("--duration", type=float, default=0, help="seconds; 0 = until Ctrl+C")
     p.add_argument("--timeout", type=float, default=15, help="a request slower than this counts as failed")
     p.add_argument("--max-inflight", type=int, default=64, help="cap on requests waiting at once")

@@ -11,10 +11,12 @@ KEEP=${1:-10}
 ACC=4d2a46c7-71cb-4cf1-b5bb-b68406d9da6f     # fdse_microservice, the only account the load uses
 LEADER=$(bash "$ARC_ROOT/ops/mysql-leader.sh") || { echo "reset-data: no writable MySQL leader found"; exit 1; }
 SQL() { $K exec "$LEADER" -c mysql -- mysql -uroot -N ts -e "$1" 2>&1 | grep -v "Using a password"; }
-before=$(SQL "select count(*) from orders")
+# orders_other holds bookings on the other train types (K/Z/T); it is empty unless that flow is in the mix
+before=$(SQL "select (select count(*) from orders) + (select count(*) from orders_other)")
 out=$(SQL "delete from orders where account_id='$ACC' and bought_date < now() - interval $KEEP minute;
-           delete p from payment p left join orders o on o.id = p.order_id where o.id is null;
-           delete i from inside_payment i left join orders o on o.id = i.order_id where o.id is null;")
+           delete from orders_other where account_id='$ACC' and bought_date < now() - interval $KEEP minute;
+           delete p from payment p left join orders o on o.id = p.order_id left join orders_other x on x.id = p.order_id where o.id is null and x.id is null;
+           delete i from inside_payment i left join orders o on o.id = i.order_id left join orders_other x on x.id = i.order_id where o.id is null and x.id is null;")
 [ -n "$out" ] && echo "reset-data: MySQL said: $out"
-after=$(SQL "select count(*) from orders")
+after=$(SQL "select (select count(*) from orders) + (select count(*) from orders_other)")
 echo "reset-data ($LEADER): orders $before -> $after (kept last ${KEEP} min)"
