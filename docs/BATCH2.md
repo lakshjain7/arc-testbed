@@ -16,11 +16,11 @@ pass a smoke test that shows it does what it claims and can be undone.
 | # | Flow (load-generator ops) | Extra services | Status |
 |---|---|---|---|
 | 1 | Other train types: `search2`, `book2`, `orders2` (K / Z / T trains) | ts-travel2-service, ts-preserve-other-service | **Done, 2026-10-11.** 7 min at 2 req/s with a database reset in the middle: 869 requests, 0 failed; 13 new graph edges (55 in total) |
-| 2 | Insurance: book with `assurance=1` | ts-assurance-service | to do |
+| 2 | Insurance: a share of bookings buys it (`--book-extras assurance=0.3`) | ts-assurance-service | **Done, 2026-10-11.** With flow 5, 7 min at 2 req/s across a reset: 901 requests, 0 failed; 60 of 175 bookings insured |
 | 3 | Food: list food for a trip, book with food | ts-food-service, ts-train-food-service, ts-station-food-service | to do |
 | 4 | Consign luggage with a booking | ts-consign-service, ts-consign-price-service | to do |
-| 5 | Cancel an order (refund) | ts-cancel-service | to do |
-| 6 | Collect ticket / enter station (paid orders) | ts-execute-service | to do |
+| 5 | Cancel an order, paid (refund) or unpaid: `cancel` | ts-cancel-service | **Done, 2026-10-11.** 74 cancels, 0 failed |
+| 6 | Collect the ticket of a paid order, then enter the station: `collect` | ts-execute-service | **Done, 2026-10-11.** 6 min at 2 req/s across a reset: 723 requests, 0 failed; 23 collects |
 | 7 | Travel plan search (cheapest / quickest) | ts-travel-plan-service, ts-route-plan-service | to do; heavy fan-out, decide after measuring |
 
 All seven would give 32 services (about +5.5 GB on top of the 20-service cluster).
@@ -28,10 +28,16 @@ All seven would give 32 services (about +5.5 GB on top of the 20-service cluster
 How to switch a flow on (cluster already up):
 
 ```bash
-bash ops/add-services.sh flow1          # loads images, adds telemetry + CPU limit, starts them one by one
+bash ops/add-services.sh wide           # loads images, adds telemetry + CPU limit, starts them one by one
 bash loadgen/warmup.sh
 ARC_MIX=wide bash run/start-campaign.sh calibrate     # new mix => new calibration
 ```
+
+The `wide` mix is: search 38, search2 12, orders 9, orders2 5, book 14, book2 6, pay 12, cancel 2,
+collect 2, with insurance on 30 % of bookings. It needs the five services of flows 1, 2, 5 and 6
+(25 services in total, about +2.3 GB). Each flow was tested on the laptop separately, because the laptop
+cannot hold them together: **the complete `wide` mix has not run yet** and must be tried on the lab
+machine (10 minutes: `python3 loadgen/loadgen.py --mix wide --rate 4 --duration 600`, expect ~0 failures).
 
 `ops/reset-data.sh` already cleans the second order table (`orders_other`) that flow 1 fills.
 

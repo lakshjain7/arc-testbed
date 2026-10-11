@@ -3,11 +3,16 @@
 # Each one gets its image loaded, the telemetry agent and the 2-core limit, then is started; one at a
 # time, because starting many JVMs together crash-loops Nacos registration.
 #   ops/add-services.sh ts-travel2-service ts-preserve-other-service
-#   ops/add-services.sh flow1            a named group from the list below
+#   ops/add-services.sh wide             everything the "wide" load mix needs (see docs/BATCH2.md)
+#   ops/add-services.sh flow1            one named group from the list below
 #   ops/add-services.sh remove flow1     scale a group back to 0 (frees ~450 MB per service)
 . "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
 group() { case "$1" in
   flow1) echo "ts-travel2-service ts-preserve-other-service" ;;     # other train types: search2, book2, orders2
+  flow2) echo "ts-assurance-service" ;;                             # insurance on bookings (--book-extras)
+  flow5) echo "ts-cancel-service" ;;                                # cancel
+  flow6) echo "ts-execute-service" ;;                               # collect ticket + enter station
+  wide)  echo "ts-travel2-service ts-preserve-other-service ts-assurance-service ts-cancel-service ts-execute-service" ;;   # every finished flow = what the "wide" load mix needs
   *) echo "$1" ;; esac; }
 REMOVE=0; [ "${1:-}" = remove ] && { REMOVE=1; shift; }
 [ $# -gt 0 ] || { sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 1; }

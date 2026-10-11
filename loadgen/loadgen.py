@@ -11,6 +11,9 @@ Traffic mix (default, "core"): search 55%, view orders 15%, book 20%, pay 10%. T
 touch the 20 core services. Bookings never ask for food or insurance.
 More flows exist for the wider system (batch 2); each needs extra services running:
   search2 / book2 / orders2   the slower train types (K, Z, T): ts-travel2-service, ts-preserve-other-service
+  cancel                      cancel an order, paid (refund) or unpaid: ts-cancel-service
+  collect                     collect the ticket of a paid order, then enter the station: ts-execute-service
+  --book-extras assurance=0.3 a share of bookings also buys insurance: ts-assurance-service
 A mix is given as --mix (or ARC_MIX) either by name ("core", "wide") or in full ("search=40,book=15,...").
 
 Outputs, under --out (default <ARC_DATA_ROOT>/<ARC_CLUSTER>/loadgen, i.e. ~/arc-data/arc/loadgen):
@@ -43,8 +46,10 @@ ROUTES2 = [
 ]
 MIXES = {
     "core": "search=55,orders=15,book=20,pay=10",
-    "wide": "search=40,search2=13,orders=10,orders2=5,book=14,book2=6,pay=12",
+    "wide": "search=38,search2=12,orders=9,orders2=5,book=14,book2=6,pay=12,cancel=2,collect=2",
 }
+MIX_EXTRAS = {"wide": "assurance=0.3"}       # default --book-extras of a named mix
+NEEDS_ORDER = ("pay", "cancel", "collect")   # flows that act on an order made earlier
 USER, PASSWORD = "fdse_microservice", "111111"
 PAY_MAX_AGE_S = 300
 
@@ -106,6 +111,9 @@ class Generator:
         # The order list is NOT in time order, so the whole list is scanned. (Reading only its last 50
         # entries starved the pay flow for 10 minutes at a time: 13 of 52 pilot episodes had no payment.)
         self.unpaid = deque()
+        self.paid = deque()                      # (orderId, trainNumber, seen_at) of orders this run has paid
+        ex = a.book_extras if a.book_extras is not None else MIX_EXTRAS.get(a.mix, "")
+        self.extras = {k: float(v) for k, v in (x.split("=") for x in ex.split(",") if x)}
         self.claimed = set()                     # orders already queued or paid, so none is paid twice
         self.baselined = set()                   # order lists looked at once: what was already there is old, skip it
         self.recent = deque()                    # (t_end, op, ok, ms) for the rolling summary
@@ -165,9 +173,13 @@ class Generator:
                 "tripId": train, "seatType": self.rng.choice([2, 3]), "loginToken": self.s.token,
                 "date": self._date(1, 30), "from": frm, "to": to,
                 "assurance": 0, "foodType": 0, "isWithin": False}
+        tags = ""
+        if self.extras.get("assurance") and self.rng.random() < self.extras["assurance"]:
+            body["assurance"] = 1                 # type 1 = the only insurance on sale
+            tags += "+ins"
         code, b, dt = call(self.a.base, "POST", path, body, self.s.token, self.a.timeout)
         ok = bool(b) and b.get("status") == 1
-        return code, ok, dt, f"{train}:{frm}-{to}", None if ok else _why(b)
+        return code, ok, dt, f"{train}:{frm}-{to}{tags}", None if ok else _why(b)
 
     def op_book(self):
         return self._book("/api/v1/preserveservice/preserve", ROUTES)
@@ -182,23 +194,59 @@ class Generator:
         ok = bool(b) and b.get("status") == 1 and len(b.get("data") or []) > 0
         return code, ok, dt, f"{frm}-{to}", None if ok else _why(b)
 
-    def op_pay(self):
-        oid, train, _ = self.unpaid.popleft()     # run() only picks "pay" when a fresh order exists
+    def op_pay(self, order):                      # run() hands over a fresh unpaid order
+        oid, train, seen = order
         code, b, dt = call(self.a.base, "POST", "/api/v1/inside_pay_service/inside_payment",
                            {"orderId": oid, "tripId": train}, self.s.token, self.a.timeout)
         ok = bool(b) and b.get("status") == 1
+        if ok:
+            with self.lock:
+                self.paid.append((oid, train, seen))
         return code, ok, dt, train or "", None if ok else _why(b)
+
+    def op_cancel(self, order):
+        oid, train, _ = order
+        code, b, dt = call(self.a.base, "GET", f"/api/v1/cancelservice/cancel/{oid}/{self.s.user_id}", None,
+                           self.s.token, self.a.timeout)
+        ok = bool(b) and b.get("status") == 1
+        return code, ok, dt, train or "", None if ok else _why(b)
+
+    def op_collect(self, order):                  # collect the ticket, then go through the gate
+        oid, train, _ = order
+        code, b, dt = call(self.a.base, "GET", f"/api/v1/executeservice/execute/collected/{oid}", None,
+                           self.s.token, self.a.timeout)
+        ok = bool(b) and b.get("status") == 1
+        if ok:
+            code, b, dt2 = call(self.a.base, "GET", f"/api/v1/executeservice/execute/execute/{oid}", None,
+                                self.s.token, self.a.timeout)
+            ok, dt = bool(b) and b.get("status") == 1, dt + dt2
+        return code, ok, dt, train or "", None if ok else _why(b)
+
+    def _take(self, op):
+        """An order for pay / cancel / collect, or None. Call with the lock held. Orders first seen more
+        than PAY_MAX_AGE_S ago are dropped: the database reset may have deleted them."""
+        now = time.time()
+        for q in (self.unpaid, self.paid):
+            while q and now - q[0][2] > PAY_MAX_AGE_S:
+                q.popleft()
+        if op == "pay":
+            return self.unpaid.popleft() if self.unpaid else None
+        if op == "collect":
+            return self.paid.popleft() if self.paid else None
+        first, second = (self.paid, self.unpaid) if self.rng.random() < 0.5 else (self.unpaid, self.paid)
+        return first.popleft() if first else (second.popleft() if second else None)   # cancel: paid = refund
 
     def _date(self, lo, hi):
         # Spread bookings over a month so no single train/date fills up and slows the seat queries.
         return (datetime.date.today() + datetime.timedelta(days=self.rng.randint(lo, hi))).isoformat()
 
     # ---- scheduling ----------------------------------------------------------
-    def fire(self, op):
+    def fire(self, op, arg=None):
         try:
             if op != "login":
                 self.s.ensure()
-            code, ok, dt, detail, err = getattr(self, "op_" + op)()
+            fn = getattr(self, "op_" + op)
+            code, ok, dt, detail, err = fn(arg) if arg is not None else fn()
             if code in (401, 403):
                 self.s.ensure(force=True)
         except Exception as e:
@@ -225,12 +273,12 @@ class Generator:
             if delay > 0:
                 self.stop.wait(delay)
             op = self.rng.choices(self.ops, self.weights)[0]
-            if op == "pay":
+            arg = None
+            if op in NEEDS_ORDER:
                 with self.lock:
-                    while self.unpaid and time.time() - self.unpaid[0][2] > PAY_MAX_AGE_S:
-                        self.unpaid.popleft()                   # too old: may have been cleaned up
-                    if not self.unpaid:
-                        op = "search"                           # nothing to pay yet: behave like a browsing user
+                    arg = self._take(op)
+                if arg is None:                                 # nothing to act on yet: behave like a browsing user
+                    op = "search" if op == "pay" else "orders"
             with self.lock:
                 self.totals["sent"] += 1
                 if self.inflight >= self.a.max_inflight:
@@ -239,7 +287,7 @@ class Generator:
                                                "ok": False, "err": "client_saturated"}) + "\n")
                     continue
                 self.inflight += 1
-            self.pool.submit(self.fire, op)
+            self.pool.submit(self.fire, op, arg)
         self.stop.set()
         self.pool.shutdown(wait=True, cancel_futures=True)
         self.write_status(final=True)
@@ -265,7 +313,7 @@ class Generator:
                 "rate_actual": round(len(rows) / window, 2), "window_s": window, "inflight": inflight,
                 "failed_pct": round(100 * sum(1 for r in rows if not r[2]) / len(rows), 1) if rows else None,
                 "p95_ms": round(_pct(all_ms, 95)) if all_ms else None, "per_op": per_op,
-                "totals": totals, "unpaid_pool": len(self.unpaid), "run_dir": self.run_dir}
+                "totals": totals, "unpaid_pool": len(self.unpaid), "paid_pool": len(self.paid), "run_dir": self.run_dir}
 
     def write_status(self, final=False):
         st = self.summary()
@@ -310,6 +358,8 @@ def main():
     p.add_argument("--rate", type=float, default=2.0, help="requests started per second (open-loop)")
     p.add_argument("--mix", default=os.environ.get("ARC_MIX", "core"),
                    help="'core' (default), 'wide', or flows with weights, e.g. search=55,orders=15,book=20,pay=10")
+    p.add_argument("--book-extras", default=os.environ.get("ARC_BOOK_EXTRAS"),
+                   help="share of bookings with extras, e.g. assurance=0.3 (default: what the named mix defines)")
     p.add_argument("--duration", type=float, default=0, help="seconds; 0 = until Ctrl+C")
     p.add_argument("--timeout", type=float, default=15, help="a request slower than this counts as failed")
     p.add_argument("--max-inflight", type=int, default=64, help="cap on requests waiting at once")
