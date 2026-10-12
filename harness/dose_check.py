@@ -9,8 +9,10 @@ is measured, not assumed.
 For each fault level: 60 s healthy baseline -> fault on for 90 s (the last 60 s are measured) -> fault
 off -> rest. Two definitions of a "bad" request are reported:
   LABEL   failed, or slower than the calibrated threshold of that user flow (the definition the labels
-          use: max(100 ms, healthy q99), from calibration/slo_thresholds.json). Decide with this one.
+          use: max(100 ms, healthy q99), from calibration/slo_thresholds.json), over all requests.
           Shown as "-" before calibration has run.
+  WORST FLOW  the same, for the user flow that suffers most. DECIDE WITH THIS ONE: an episode is
+          flagged "saturated before the action" when its worst flow is >= 80 % bad.
   2xP95   failed, or slower than twice that flow's 95th percentile in the 60 s just before. A rough
           stand-in for use before calibration exists.
 Both bars follow the machine's own healthy speed, so on a fast machine (35 ms requests) a 150 ms answer
@@ -83,7 +85,7 @@ def main():
     print(f"cluster {arcenv.CLUSTER}, load {st.get('rate_target')} req/s. Each level takes 3.5-5 min.")
     print("label thresholds per flow (ms): " + (", ".join(f"{k} {v}" for k, v in sorted(label_T.items())) or
                                                 "none yet (calibrate first); deciding with 2xP95") + "\n", flush=True)
-    print(f"  {'fault':14s} {'level':>6s} {'on':24s} {'requests':>8s} {'failed':>7s} {'LABEL bad':>10s} {'2xP95 bad':>10s}  "
+    print(f"  {'fault':14s} {'level':>6s} {'on':24s} {'requests':>8s} {'failed':>7s} {'LABEL bad':>10s} {'2xP95 bad':>10s} {'WORST FLOW':>14s}  "
           f"{'median ms':>16s}  verdict", flush=True)
     results = []
     # CPU use of each squeeze target, measured once now while everything is healthy. Measuring it again
@@ -120,18 +122,29 @@ def main():
             failed = sum(not r["ok"] for r in rows)
             rel = pct(failed + sum(r["ok"] and r["ms"] > thr.get(r["op"], 2000) for r in rows))
             lab = pct(failed + sum(r["ok"] and r["ms"] > label_T.get(r["op"], L.FALLBACK_T_MS) for r in rows)) if label_T else None
-            bad = lab if lab is not None else rel
+            # The labels call an episode "saturated before the action" when the WORST user flow is >= 80 % bad,
+            # not when the average is. Search is over half the traffic and suffers first, so an average of
+            # 50 % can hide a search flow that is 100 % bad (lab machine: delay 7 ms looked moderate on
+            # average and saturated 29 of 29 episodes). Judge by the worst flow.
+            T = label_T if label_T else thr
+            per = {}
+            for op in {r["op"] for r in rows}:
+                rs = [r for r in rows if r["op"] == op]
+                if len(rs) >= 5:
+                    per[op] = 100 * sum((not r["ok"]) or r["ms"] > T.get(op, L.FALLBACK_T_MS) for r in rs) / len(rs)
+            worst_op = max(per, key=per.get) if per else "-"
+            bad = per.get(worst_op, lab if lab is not None else rel)
             med = lambda rs: sorted(r["ms"] for r in rs)[len(rs) // 2] if rs else 0
             crashed = uid1 != uid0 or rc1 != rc0
             verdict = ("FAULT NOT APPLIED" if not okf else
                        "CONTAINER RESTARTED (the fault became a crash; too strong)" if crashed and fault != "pod-kill" else
-                       "too weak" if bad < 5 else "good" if bad <= 60 else
-                       "strong (use only as the 'hard' level)" if bad <= 80 else "TOO STRONG (saturates)")
+                       "too weak" if bad < 10 else "good" if bad <= 65 else
+                       "strong (close to saturation)" if bad < 80 else "TOO STRONG (saturates)")
             extra = f" limit {info.get('cpu_limit')}" if fault == "cpu-squeeze" else ""
             print(f"  {fault:14s} {str(lvl):>6s} {target[3:-8] + extra:24s} {n:8d} {pct(failed):6.1f}% "
-                  f"{'-' if lab is None else f'{lab:.1f}%':>10s} {rel:9.1f}%  {med(base):6.0f} -> {med(rows):6.0f}  {verdict}", flush=True)
+                  f"{'-' if lab is None else f'{lab:.1f}%':>10s} {rel:9.1f}% {worst_op + f' {bad:.0f}%':>14s}  {med(base):6.0f} -> {med(rows):6.0f}  {verdict}", flush=True)
             results.append({"fault": fault, "level": lvl, "target": target, "n": n, "failed_pct": pct(failed),
-                            "bad_label_pct": lab, "bad_2xp95_pct": rel, "verified": okf, "info": info,
+                            "bad_label_pct": lab, "bad_2xp95_pct": rel, "worst_flow": worst_op, "worst_flow_bad_pct": bad, "per_flow_bad_pct": per, "verified": okf, "info": info,
                             "container_restarted": crashed, "verdict": verdict})
             # the squeeze is sized from the CPU used in the last 2 min: let a previous squeeze leave that window
             time.sleep(130 if fault == "cpu-squeeze" else REST_S)
@@ -139,7 +152,8 @@ def main():
     out = os.path.join(arcenv.DATA, "logs", f"dose-check-{time.strftime('%Y%m%d-%H%M')}.json")
     json.dump({"rate": st.get("rate_target"), "label_thresholds_ms": label_T, "results": results}, open(out, "w"), indent=1)
     print(f"\nsaved {out}")
-    print("Pick, per fault, one level near 10-25 % bad and one near 40-60 %, and give them to the plan:")
+    print("Decide with WORST FLOW (what the labels' saturation flag uses): per fault one level at 15-35 % and one")
+    print("at 40-65 %; never one at 80 % or more. Then give the levels to the plan:")
     print("  python3 harness/run_campaign.py plan --episodes 700 --delay A,B --loss C,D --squeeze E,F")
 
 
