@@ -19,4 +19,11 @@ out=$(SQL "delete from orders where account_id='$ACC' and bought_date < now() - 
            delete i from inside_payment i left join orders o on o.id = i.order_id left join orders_other x on x.id = i.order_id where o.id is null and x.id is null;")
 [ -n "$out" ] && echo "reset-data: MySQL said: $out"
 after=$(SQL "select (select count(*) from orders) + (select count(*) from orders_other)")
+# MySQL writes every query to an audit log with no size limit (lab machine: 9.2 GB in 49 h at 4 req/s,
+# enough to fill the disk mid-campaign). Empty it in place on every MySQL pod. The audit setting itself is
+# left alone so the database behaves the same in every episode. Tested with MySQL running: the file
+# restarts from 0 and grows normally, no failed request, no restart.
+for p in $($K get pods --no-headers 2>/dev/null | awk '/^(tsdb|nacosdb)-mysql-[0-9]+/{print $1}'); do
+  $K exec "$p" -c mysql -- sh -c ': > /var/log/mysql/mysql-audit.log' >/dev/null 2>&1
+done
 echo "reset-data ($LEADER): orders $before -> $after (kept last ${KEEP} min)"

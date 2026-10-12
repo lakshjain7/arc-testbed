@@ -19,8 +19,9 @@ showed latency 30x worse while errors fell from 100% to 14%).
                 harm if max LB > DELTA; no_harm if max UB < DELTA; otherwise inconclusive
                 (phi_s and z come from calibrate_v2.py fitted on no-fault no-op episodes)
 
-Stalls (whole-system freezes seen by the load generator) are cut out of B1L and M (±5 s). If more than
-25% of M or 50% of B1L is cut, the episode is marked "stalled".
+Stalls (whole-system freezes seen by the load generator) are cut out of B1L and M (±5 s), but only where
+nothing we did can have caused them: never in a fault episode, and after the action only when the action
+is a no-op. If more than 25% of M or 50% of B1L is cut, the episode is marked "stalled".
 Per client flow (search / orders / book / pay) the same bad-ratio is computed from what users saw;
 that is the only place Train Ticket's HTTP-200 business failures are visible.
 
@@ -173,9 +174,16 @@ def label_episode(d, slo=None, cal=None):
     # v2.1 (after the pilot): in a FAULT episode, client timeouts are usually caused by the fault itself,
     # not by an ambient laptop freeze; cutting them out discarded most delay/squeeze episodes. Stalls are
     # still recorded, but only cut out (and only mark an episode "stalled") when there is no fault.
+    # v2.2 (lab machine, 12 Oct): a restart in a healthy system makes requests time out, which looks exactly
+    # like a stall. Cutting those out removed 69-75 % of the after-action window in every no-fault
+    # restart episode, i.e. it deleted the damage we are measuring. So after the action, stalls are cut
+    # only when the action is a no-op (then nothing we did can have caused them); before the action
+    # they are still cut, judged from requests that started before it.
     stalls_seen = stalls
     if meta.get("fault_type") not in (None, "none"):
         stalls = []
+    elif meta.get("action_type") not in (None, "noop"):
+        stalls = [(a, min(b, t_act)) for a, b in stall_ranges([r for r in rows if float(r["t"]) < t_act]) if a < t_act]
     in_stall = lambda t: any(a <= t - STEP and t <= b or a <= t <= b for a, b in stalls)
 
     b1l = lambda t: t_act - B1L_S < t <= t_act and not in_stall(t)
@@ -277,7 +285,7 @@ def label_episode(d, slo=None, cal=None):
               "fault": meta.get("fault_type"), "fault_target": meta.get("fault_target"),
               "action": meta.get("action_type"), "action_target": meta.get("action_target"),
               "stalled": stalled, "stall_cut": {"M": round(m_cut, 2), "B1L": round(b_cut, 2)},
-              "stall_slices_seen": len(stalls_seen), "stall_rule": "cut only when fault == none (v2.1)",
+              "stall_slices_seen": len(stalls_seen), "stall_rule": "cut only when fault == none; after the action only if the action is noop (v2.2)",
               "params": {"DELTA": DELTA, "z": z, "B1L_S": B1L_S, "BLOCK_S": BLOCK_S, "ABS_T_MS": ABS_T_MS,
                          "slo_table": bool(slo), "calibrated": os.path.exists(CAL_FILE)},
               "saturated_before_action": saturated, "summary": summary,

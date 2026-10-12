@@ -32,7 +32,7 @@ def pts(v):
     return "" if v is None else round(100 * v, 2)
 
 
-E_COLS = ["episode_id", "cluster", "host", "recorded", "status", "discard_reason", "usable", "fault", "fault_level",
+E_COLS = ["episode_id", "cluster", "host", "recorded", "status", "discard_reason", "usable", "fault", "fault_level", "fault_level_nominal",
           "fault_target", "action", "action_target", "action_on_fault_target", "delay_s", "load_rate",
           "stalled", "saturated_before_action", "services_harm", "services_no_harm", "services_inconclusive",
           "services_no_data", "collateral_harmed", "collateral_peak_sum_pts", "collateral_mean_sum_pts",
@@ -58,6 +58,7 @@ for root in roots:
             "recorded": time.strftime("%Y-%m-%d %H:%M", time.localtime(m["exported_at"])) if m.get("exported_at") else "",
             "status": m.get("status"), "discard_reason": m.get("discard_reason") or "", "usable": int(usable),
             "fault": m.get("fault_type"), "fault_level": m.get("fault_param") if m.get("fault_param") is not None else "",
+            "fault_level_nominal": m.get("fault_level_nominal") or "",
             "fault_target": m.get("fault_target") or "", "action": m.get("action_type"),
             "action_target": m.get("action_target") or "", "action_on_fault_target": int(bool(m.get("action_on_fault_target"))),
             "delay_s": m.get("action_delay_s"), "load_rate": m.get("load_rate"),

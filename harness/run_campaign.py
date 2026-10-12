@@ -61,8 +61,16 @@ def plan_path(name):
     return os.path.join(PLANS, f"{name}.json")
 
 
-def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS):
+SCALED_FAULTS = ("network-delay", "net-loss")     # the squeeze is already relative to each service's own use
+
+
+def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_scale=None):
+    """target_scale {service: factor}: the delay / loss level is multiplied by the factor when the fault
+    lands on that service. The same delay hurts far more on a service that is called many times per
+    user request (lab machine: 4 ms saturated order and basic every time, the other four never).
+    'level' is what is applied; 'level_nominal' is the plan's level, the same within a block."""
     rng = random.Random(seed)
+    target_scale = target_scale or {}
     conds = [("none", None), ("pod-kill", None)] + [(f, l) for f in ("network-delay", "net-loss", "cpu-squeeze")
                                                     for l in levels[f]] + (HARD if hard else [])
     eps, block = [], 0
@@ -83,12 +91,13 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS):
                     at = ft
                 else:
                     at = rng.choice([t for t in TARGETS if t != ft])
+                lvl = round(level * target_scale.get(ft, 1), 2) if fault in SCALED_FAULTS else level
                 eps.append({"id": f"ep_{name}_{arcenv.CLUSTER}_b{block:03d}_{i}", "block": block, "fault": fault,
-                            "level": level, "fault_target": ft if fault != "none" else None, "action": act,
+                            "level": lvl, "level_nominal": level, "fault_target": ft if fault != "none" else None, "action": act,
                             "action_target": at, "delay": round(rng.uniform(60, delay_max)),
                             "seed": rng.randrange(1 << 30)})
     return {"name": name, "cluster": arcenv.CLUSTER, "seed": seed, "created": time.time(), "hard": hard,
-            "conditions": conds, "episodes": eps}
+            "conditions": conds, "target_scale": target_scale, "episodes": eps}
 
 
 def status_of(ep_id):
@@ -107,6 +116,8 @@ def run_one(e, suffix=""):
         cmd += ["--fault-target", e["fault_target"]]
     if e.get("level") is not None:
         cmd += ["--fault-param", str(e["level"])]
+        if e.get("level_nominal") is not None and e["level_nominal"] != e["level"]:
+            cmd += ["--fault-nominal", str(e["level_nominal"])]
     log(f">>> {ep_id}: fault={e['fault']}({e.get('level')})@{(e.get('fault_target') or '-')[3:-8] or '-'} "
         f"action={e['action']}@{e['action_target'][3:-8]} delay={e['delay']}s")
     child = subprocess.Popen(cmd, start_new_session=True)     # own session: signals reach it only through us
@@ -240,7 +251,7 @@ def cmd_status(a):
     print("  discards: ", dict(Counter(m.get("discard_reason") for _, m, _ in rows if m.get("status") == "discarded")))
     print("  stalled:  ", sum(1 for _, _, l in rows if l.get("stalled")),
           "| saturated before the action:", sum(1 for _, _, l in rows if l.get("saturated_before_action")))
-    print("  by fault: ", dict(Counter(f"{e['fault']}{'' if e['level'] is None else ':' + str(e['level'])}" for e, _, _ in rows)))
+    print("  by fault: ", dict(Counter(f"{e['fault']}{'' if e['level'] is None else ':' + str(e.get('level_nominal', e['level']))}" for e, _, _ in rows)))
     print("  by action:", dict(Counter(e["action"] for e, _, _ in rows)))
     if len(times) >= 2:
         span = max(times) - min(times)
@@ -260,6 +271,8 @@ def main():
     num = lambda v: [] if v.strip().lower() in ("", "none", "off") else [float(x) if "." in x else int(x) for x in v.split(",")]
     pl.add_argument("--delay", type=num, default=LEVELS["network-delay"], help="network-delay levels in ms, e.g. 25,75")
     pl.add_argument("--loss", type=num, default=LEVELS["net-loss"], help="net-loss levels in percent, e.g. 15,30")
+    pl.add_argument("--target-scale", default={}, type=lambda v: {k: float(x) for k, x in (kv.split("=") for kv in v.split(",") if kv)},
+                    help="multiply the delay and loss level on sensitive fault targets, e.g. ts-order-service=0.5,ts-basic-service=0.5")
     pl.add_argument("--squeeze", type=num, default=LEVELS["cpu-squeeze"],
                     help="cpu-squeeze levels: CPU limit as a multiple of the service's recent average use, e.g. 2.5; "
                          "'none' leaves a fault out of the plan (works for --delay and --loss too)")
@@ -274,12 +287,16 @@ def main():
             sys.exit(f"{plan_path(a.name)} exists. Use --force only before any of its episodes has run.")
         seed = a.seed if a.seed is not None else int(hashlib.md5(f"{a.name}/{arcenv.CLUSTER}".encode()).hexdigest()[:8], 16)
         plan = make_plan(a.name, a.episodes, seed, a.hard, a.delay_max,
-                         {"network-delay": a.delay, "net-loss": a.loss, "cpu-squeeze": a.squeeze})
+                         {"network-delay": a.delay, "net-loss": a.loss, "cpu-squeeze": a.squeeze}, a.target_scale)
         json.dump(plan, open(plan_path(a.name), "w"), indent=1)
         eps = plan["episodes"]
         print(f"wrote {plan_path(a.name)}: {len(eps)} episodes in {eps[-1]['block']} blocks of 7, seed {seed}"
               + (f"  (asked for {a.episodes}; rounded up so the last block is complete)" if len(eps) != a.episodes else ""))
-        print("  faults: ", dict(Counter(f"{e['fault']}{'' if e['level'] is None else ':' + str(e['level'])}" for e in eps)))
+        print("  faults: ", dict(Counter(f"{e['fault']}{'' if e['level'] is None else ':' + str(e.get('level_nominal', e['level']))}" for e in eps)))
+        if a.target_scale:
+            print("  per-target scale for delay and loss:", a.target_scale, "-> applied levels:",
+                  dict(Counter(f"{e['fault']}@{e['fault_target'][3:-8]}:{e['level']}" for e in eps
+                               if e["fault"] in SCALED_FAULTS and e["fault_target"] in a.target_scale)))
         print("  actions:", dict(Counter(e["action"] for e in eps)))
         print(f"  at ~10 min per episode: about {len(eps)*10/60:.0f} hours ({len(eps)*10/60/24:.1f} days) on this cluster")
     elif a.cmd in ("run", "calibrate"):

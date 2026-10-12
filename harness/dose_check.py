@@ -22,7 +22,7 @@ Needs the continuous load generator (python3 loadgen/loadgen.py --rate N &, wait
   dose_check.py network-delay:2,5,10 net-loss:8,15          chosen levels, default targets
   dose_check.py cpu-squeeze@ts-order-service:2,1.5,1        a chosen target (fault@service:levels)
 """
-import json, os, sys, time
+import json, os, subprocess, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_episode as R
@@ -94,6 +94,10 @@ def main():
         print(f"healthy CPU use of {t[3:-8]}: {1000 * (u or 0):.0f}m", flush=True)
     for fault, target, levels in cands:
         for lvl in levels:
+            # same database size for every reading: without this the order table grows through the check
+            # and later levels look worse than they are (lab machine, 12 Oct)
+            subprocess.run(["bash", arcenv.script("ops", "reset-data.sh")], capture_output=True)
+            time.sleep(20)
             t0 = time.time()
             time.sleep(BASE_S)
             base = requests_between(run_dir, t0, t0 + BASE_S)

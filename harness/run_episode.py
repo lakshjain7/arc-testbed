@@ -319,13 +319,13 @@ def chaos_cr(fault, target, name, param):
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "PodChaos", "metadata": md,
                 "spec": {"action": "pod-kill", "mode": "one", "gracePeriod": 0, "selector": sel}}
     if fault == "network-delay":
-        ms = int(param or FAULT_DEFAULT_PARAM[fault])
+        ms = float(param or FAULT_DEFAULT_PARAM[fault])      # decimals allowed: a fast machine needs 1-4 ms
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
                 "spec": {"action": "delay", "mode": "all", "selector": sel, "direction": "to",
-                         "delay": {"latency": f"{ms}ms", "jitter": f"{ms // 4}ms", "correlation": "25"},
+                         "delay": {"latency": f"{ms:g}ms", "jitter": f"{ms / 4:g}ms", "correlation": "25"},
                          "duration": "30m"}}
     if fault in ("net-loss", "blackhole"):
-        pct = "100" if fault == "blackhole" else str(int(param or FAULT_DEFAULT_PARAM[fault]))
+        pct = "100" if fault == "blackhole" else f"{float(param or FAULT_DEFAULT_PARAM[fault]):g}"
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
                 "spec": {"action": "loss", "mode": "all", "selector": sel, "direction": "to",
                          "loss": {"loss": pct, "correlation": "0" if fault == "blackhole" else "25"},
@@ -442,6 +442,7 @@ def main():
     p.add_argument("--id")
     p.add_argument("--fault", default="none", choices=FAULTS)
     p.add_argument("--fault-target")
+    p.add_argument("--fault-nominal", help="the plan's level before per-target scaling (recorded in meta only)")
     p.add_argument("--fault-param", help="level: network-delay = latency ms (default 100); net-loss = percent "
                                          "(default 15); cpu-squeeze = CPU limit as a multiple of recent average use (default 2.5)")
     p.add_argument("--action", choices=ACTIONS)
@@ -458,7 +459,7 @@ def main():
     delay = a.delay if a.delay is not None else rng.uniform(60, 300)
     ep = a.id or time.strftime("ep_%Y%m%d_%H%M%S")
     chaos_name = "arc-" + ep.replace("_", "-").lower()[:50]
-    meta = {"episode_id": ep, "status": "ok", "discard_reason": None,
+    meta = {"episode_id": ep, "status": "ok", "discard_reason": None, "fault_level_nominal": a.fault_nominal,
             "fault_type": a.fault, "fault_target": fault_target if a.fault != "none" else None,
             "fault_param": a.fault_param or FAULT_DEFAULT_PARAM.get(a.fault),
             "action_type": action, "action_target": target if action != "noop" else None,
