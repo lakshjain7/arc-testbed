@@ -137,7 +137,7 @@ def main():
             med = lambda rs: sorted(r["ms"] for r in rs)[len(rs) // 2] if rs else 0
             crashed = uid1 != uid0 or rc1 != rc0
             verdict = ("FAULT NOT APPLIED" if not okf else
-                       "CONTAINER RESTARTED (the fault became a crash; too strong)" if crashed and fault != "pod-kill" else
+                       "CONTAINER RESTARTED (the fault became a crash; too strong)" if crashed and fault not in ("pod-kill", "pod-hang") else
                        "too weak" if bad < 10 else "good" if bad <= 65 else
                        "strong (close to saturation)" if bad < 80 else "TOO STRONG (saturates)")
             extra = f" limit {info.get('cpu_limit')}" if fault == "cpu-squeeze" else ""

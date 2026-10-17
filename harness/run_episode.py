@@ -289,7 +289,14 @@ def fault_on_new_pod(fault, chaos_name, target):
 # cpu-stress (Chaos Mesh StressChaos) is kept for reference but NOT used: the smoke test showed the stress
 # processes run outside the target container on kind + cgroup v2 (target never throttled, whole host at
 # load 25, every service timing out). cpu-squeeze replaces it: the target's CPU limit is cut in place.
-FAULTS = ["none", "pod-kill", "network-delay", "net-loss", "cpu-squeeze", "blackhole", "cpu-stress"]
+FAULTS = ["none", "pod-kill", "network-delay", "net-loss", "cpu-squeeze", "blackhole", "cpu-stress",
+          "pod-hang", "db-delay"]
+# Batch 2 faults whose meaning does not depend on machine speed:
+#   pod-hang  Chaos Mesh pod-failure: the target's container is swapped for a pause container. The pod
+#             is alive but answers nothing (a hung JVM), and it is NOT restarted by Kubernetes.
+#   db-delay  network delay only on the target's traffic TO MySQL (tsdb), level in ms. Other services
+#             reach the database normally; callers reach the target normally.
+DB_SELECTOR = {"namespaces": ["train-ticket"], "labelSelectors": {"app": "tsdb-mysql"}}   # all three copies (the leader moves)
 SQUEEZE_MIN_M = 10        # 10m is the smallest CPU quota Kubernetes enforces. Was 25m: on a fast machine the quiet
                           # services use 6-17m, so every level hit the floor and gave the same limit (lab, 2026-10-10)
 
@@ -303,18 +310,29 @@ def prom_scalar(q):
         return float(res[0]["value"][1]) if res else None
     except Exception:
         return None
-CHAOS_KIND = {"pod-kill": "podchaos", "network-delay": "networkchaos", "net-loss": "networkchaos",
+CHAOS_KIND = {"pod-kill": "podchaos", "pod-hang": "podchaos", "db-delay": "networkchaos",
+              "network-delay": "networkchaos", "net-loss": "networkchaos",
               "blackhole": "networkchaos", "cpu-stress": "stresschaos"}
 # Default levels. The pilot's 300 ms delay, 1/4-CPU squeeze and blackhole SATURATED the system (users
 # >= 80% bad before the action in 39% of episodes), which hides the action's effect. Milder defaults;
 # the campaign draws from several levels per fault (harness/run_campaign.py).
-FAULT_DEFAULT_PARAM = {"network-delay": 50, "net-loss": 15, "cpu-squeeze": 2.5}
+FAULT_DEFAULT_PARAM = {"network-delay": 50, "net-loss": 15, "cpu-squeeze": 2.5, "db-delay": 20}
 
 
 def chaos_cr(fault, target, name, param):
     sel = {"namespaces": ["train-ticket"], "labelSelectors": {"app": target}}
     md = {"name": name, "namespace": "train-ticket"}
     # duration 30m is only a safety net; every fault is removed explicitly at teardown
+    if fault == "pod-hang":
+        return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "PodChaos", "metadata": md,
+                "spec": {"action": "pod-failure", "mode": "all", "selector": sel, "duration": "30m"}}
+    if fault == "db-delay":
+        ms = float(param or FAULT_DEFAULT_PARAM[fault])
+        return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
+                "spec": {"action": "delay", "mode": "all", "selector": sel, "direction": "to",
+                         "target": {"mode": "all", "selector": DB_SELECTOR},
+                         "delay": {"latency": f"{ms:g}ms", "jitter": f"{ms / 4:g}ms", "correlation": "25"},
+                         "duration": "30m"}}
     if fault == "pod-kill":
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "PodChaos", "metadata": md,
                 "spec": {"action": "pod-kill", "mode": "one", "gracePeriod": 0, "selector": sel}}

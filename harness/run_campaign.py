@@ -64,15 +64,16 @@ def plan_path(name):
 SCALED_FAULTS = ("network-delay", "net-loss")     # the squeeze is already relative to each service's own use
 
 
-def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_scale=None):
+def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_scale=None, targets=None):
     """target_scale {service: factor}: the delay / loss level is multiplied by the factor when the fault
     lands on that service. The same delay hurts far more on a service that is called many times per
     user request (lab machine: 4 ms saturated order and basic every time, the other four never).
     'level' is what is applied; 'level_nominal' is the plan's level, the same within a block."""
     rng = random.Random(seed)
     target_scale = target_scale or {}
-    conds = [("none", None), ("pod-kill", None)] + [(f, l) for f in ("network-delay", "net-loss", "cpu-squeeze")
-                                                    for l in levels[f]] + (HARD if hard else [])
+    T = targets or TARGETS              # batch 2 adds services of the new flows as fault / action targets
+    conds = [("none", None), ("pod-kill", None)] + [(f, l) for f in ("network-delay", "net-loss", "cpu-squeeze", "db-delay")
+                                                    for l in levels.get(f, [])]         + ([("pod-hang", None)] if levels.get("pod-hang") else []) + (HARD if hard else [])
     eps, block = [], 0
     while len(eps) < n_episodes:
         order = conds[:]
@@ -83,21 +84,21 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_sca
             block += 1
             acts = ACTIONS[:]
             rng.shuffle(acts)
-            ftargets = rng.sample(TARGETS, len(TARGETS)) + [rng.choice(TARGETS)]
+            ftargets = (rng.sample(T, len(T)) + [rng.choice(T)])[:7]
             for i, (act, ft) in enumerate(zip(acts, ftargets), 1):
                 if fault == "none":
-                    at = rng.choice(TARGETS)
+                    at = rng.choice(T)
                 elif rng.random() < 0.5:
                     at = ft
                 else:
-                    at = rng.choice([t for t in TARGETS if t != ft])
+                    at = rng.choice([t for t in T if t != ft])
                 lvl = round(level * target_scale.get(ft, 1), 2) if fault in SCALED_FAULTS else level
                 eps.append({"id": f"ep_{name}_{arcenv.CLUSTER}_b{block:03d}_{i}", "block": block, "fault": fault,
                             "level": lvl, "level_nominal": level, "fault_target": ft if fault != "none" else None, "action": act,
                             "action_target": at, "delay": round(rng.uniform(60, delay_max)),
                             "seed": rng.randrange(1 << 30)})
     return {"name": name, "cluster": arcenv.CLUSTER, "seed": seed, "created": time.time(), "hard": hard,
-            "conditions": conds, "target_scale": target_scale, "episodes": eps}
+            "conditions": conds, "target_scale": target_scale, "targets": T, "episodes": eps}
 
 
 def status_of(ep_id):
@@ -280,6 +281,10 @@ def main():
     pl.add_argument("--squeeze", type=num, default=LEVELS["cpu-squeeze"],
                     help="cpu-squeeze levels: CPU limit as a multiple of the service's recent average use, e.g. 2.5; "
                          "'none' leaves a fault out of the plan (works for --delay and --loss too)")
+    pl.add_argument("--db-delay", type=num, default=[], help="batch 2: delay (ms) on the target's database traffic, e.g. 10,30")
+    pl.add_argument("--targets", type=lambda v: [x for x in v.split(",") if x], default=None,
+                    help="fault / action targets (default: the six batch-1 services)")
+    pl.add_argument("--hang", action="store_true", help="batch 2: include the pod-hang fault (one level)")
     for nm in ("run", "status"):
         s = sub.add_parser(nm); s.add_argument("--name", default="main")
     a = p.parse_args()
@@ -291,7 +296,8 @@ def main():
             sys.exit(f"{plan_path(a.name)} exists. Use --force only before any of its episodes has run.")
         seed = a.seed if a.seed is not None else int(hashlib.md5(f"{a.name}/{arcenv.CLUSTER}".encode()).hexdigest()[:8], 16)
         plan = make_plan(a.name, a.episodes, seed, a.hard, a.delay_max,
-                         {"network-delay": a.delay, "net-loss": a.loss, "cpu-squeeze": a.squeeze}, a.target_scale)
+                         {"network-delay": a.delay, "net-loss": a.loss, "cpu-squeeze": a.squeeze,
+                          "db-delay": a.db_delay, "pod-hang": a.hang}, a.target_scale, a.targets)
         json.dump(plan, open(plan_path(a.name), "w"), indent=1)
         eps = plan["episodes"]
         print(f"wrote {plan_path(a.name)}: {len(eps)} episodes in {eps[-1]['block']} blocks of 7, seed {seed}"
