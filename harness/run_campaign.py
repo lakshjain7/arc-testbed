@@ -209,6 +209,9 @@ def cmd_run(a):
     if os.environ.get("ARC_SYNC") == "1":
         subprocess.run(["bash", arcenv.script("run", "sync-data.sh")])
     log("CAMPAIGN DONE" if ok else "CAMPAIGN STOPPED")
+    # Nothing resets the database once the plan is over; a load left running fills the order table until
+    # every request fails (lab machine, 16 Oct: 22,607 orders and HTTP 500s seven hours after the end).
+    subprocess.run(["bash", arcenv.script("loadgen", "stop-loadgen.sh")])
 
 
 def cmd_calibrate(a):
@@ -223,6 +226,7 @@ def cmd_calibrate(a):
     r = subprocess.run([sys.executable, arcenv.script("harness", "calibrate_v2.py")])
     if r.returncode == 0:
         log("CALIBRATION DONE (re-label old episodes with: python3 harness/relabel.py)")
+        subprocess.run(["bash", arcenv.script("loadgen", "stop-loadgen.sh")])
     else:
         log("CALIBRATION EPISODES DONE, BUT THE FIT FAILED (see the lines above; it needs about 8+ usable "
             "episodes). Run more: run/start-campaign.sh calibrate 10")

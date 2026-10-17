@@ -64,6 +64,14 @@ machine (10 minutes: `python3 loadgen/loadgen.py --mix wide --rate 4 --duration 
 Batch 1 uses 6 target services. Batch 2 adds the new services of each finished flow as fault and
 action targets (travel2 and preserve-other first).
 
+## Setup changes for batch 2 (new calibration anyway)
+
+- Switch the MySQL audit log off at setup (batch 1 only emptied it before each episode, so the database
+  behaved the same throughout): on every MySQL pod `SET GLOBAL audit_log_policy = 'NONE';`, re-applied
+  after any restart like max_connections.
+- Dose check by WORST FLOW on every fault target, not only a reference target (batch 1: the same delay
+  saturated order and basic every time and the other four never).
+
 ## Open design points
 
 - Load: find the lab machine's real ceiling (`step-test.sh "6 8 12 16"`), run at two thirds, recalibrate.

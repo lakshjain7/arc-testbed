@@ -45,8 +45,8 @@ case "$MODE" in
     tmux has-session -t "$SESSION" 2>/dev/null || { echo "nothing is running for $ARC_CLUSTER"; exit 0; }
     echo "stopping: the episode in progress removes its fault and undoes its action first (up to ~2 min)"
     tmux send-keys -t "$SESSION" C-c
-    PANE=$(tmux list-panes -t "$SESSION" -F '#{pane_pid}' | head -1)
-    for _ in $(seq 160); do pgrep -P "$PANE" python3 >/dev/null || break; sleep 2; done
+    PANE=$(tmux list-panes -t "$SESSION" -F '#{pane_pid}' 2>/dev/null | head -1)
+    [ -n "$PANE" ] && for _ in $(seq 160); do pgrep -P "$PANE" python3 >/dev/null 2>&1 || break; sleep 2; done
     tmux kill-session -t "$SESSION" 2>/dev/null
     bash "$ARC_ROOT/loadgen/stop-loadgen.sh"
     bash "$ARC_ROOT/ops/cleanup.sh"

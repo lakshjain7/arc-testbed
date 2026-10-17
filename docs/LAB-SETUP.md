@@ -76,7 +76,12 @@ Everything runs inside Ubuntu-on-Windows (WSL2), exactly as on the laptop.
    Disk: a running cluster holds about 45 GB of images on the Windows drive (measured on the lab machine);
    have 90 GB free on it before you start.
 
-4. **Stop Windows from sleeping:** Settings -> System -> Power -> Sleep: Never. Sleep breaks Docker
+4. **Keep Windows from interrupting a multi-day run.** Windows Update restarted the lab machine three
+   times during batch 1 (about 31 hours lost). Before a run: Settings -> Windows Update -> Pause updates
+   for the length of the run, and Docker Desktop Settings -> General -> "Start Docker Desktop when you
+   sign in". After any restart: start Docker Desktop, then `ops/recover-after-restart.sh`,
+   `loadgen/warmup.sh`, `ops/cleanup.sh`, and the same `start-campaign.sh campaign ...` command (it resumes).
+5. **Stop Windows from sleeping:** Settings -> System -> Power -> Sleep: Never. Sleep breaks Docker
    (it did on the laptop, twice).
 
 5. Inside Ubuntu:
