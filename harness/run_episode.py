@@ -329,8 +329,12 @@ def chaos_cr(fault, target, name, param):
     if fault == "db-delay":
         ms = float(param or FAULT_DEFAULT_PARAM[fault])
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
-                "spec": {"action": "delay", "mode": "all", "selector": sel, "direction": "to",
-                         "target": {"mode": "all", "selector": DB_SELECTOR},
+                # Delay the DATABASE's replies to the target. The target reaches MySQL through a Service
+                # address that is only translated after the packet has left the target's pod, so a filter on
+                # the MySQL pod addresses never matches there (lab machine, 17 Oct: 0 % effect). Replies leave
+                # the MySQL pods addressed to the target pod's own IP, which a filter does see.
+                "spec": {"action": "delay", "mode": "all", "selector": DB_SELECTOR, "direction": "to",
+                         "target": {"mode": "all", "selector": sel},
                          "delay": {"latency": f"{ms:g}ms", "jitter": f"{ms / 4:g}ms", "correlation": "25"},
                          "duration": "30m"}}
     if fault == "pod-kill":
