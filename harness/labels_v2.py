@@ -162,7 +162,7 @@ def se(p1, n1, p0, n0):
 
 
 # ---- the label ------------------------------------------------------------------------------
-def label_episode(d, slo=None, cal=None):
+def label_episode(d, slo=None, cal=None, write=True):
     slo = load_json(SLO_FILE, {}) if slo is None else slo
     cal = load_json(CAL_FILE, DEFAULT_CAL) if cal is None else cal
     meta = json.load(open(os.path.join(d, "meta.json")))
@@ -290,7 +290,8 @@ def label_episode(d, slo=None, cal=None):
                          "slo_table": bool(slo), "calibrated": os.path.exists(CAL_FILE)},
               "saturated_before_action": saturated, "summary": summary,
               "services": out, "client_flows": flows}
-    json.dump(labels, open(os.path.join(d, f"labels_v{VERSION}.json"), "w"), indent=1)
+    if write:          # calibration computes trial labels and must not overwrite the stored ones
+        json.dump(labels, open(os.path.join(d, f"labels_v{VERSION}.json"), "w"), indent=1)
     return labels
 
 

@@ -95,9 +95,18 @@ def main(args):
         frac = float(args[args.index("--holdout") + 1])
         args = [a for a in args if a not in ("--holdout", str(frac))]
     eps = [os.path.expanduser(a) for a in args if os.path.isdir(os.path.expanduser(a))]
-    if not eps:      # default: all clusters' episodes on this machine
+    if not eps:
+        # Default: only the dedicated calibration episodes (ep_cal_*) recorded with the CURRENT load mix
+        # (ARC_MIX, default "core"). Fitting on every no-fault no-op episode on disk blended two mixes on
+        # the lab machine (17 Oct: 48 core-mix + 20 wide-mix) and rewrote batch 1 labels. Pass episode
+        # folders explicitly to choose a different set. Episodes recorded before load_mix existed count
+        # as "core" and can only be selected explicitly for another mix.
         import glob
-        eps = sorted(glob.glob(os.path.join(L.arcenv.DATA_ROOT, "*", "raw", "*")))
+        mix = os.environ.get("ARC_MIX", "core")
+        eps = sorted(glob.glob(os.path.join(L.arcenv.DATA_ROOT, "*", "raw", "ep_cal_*")))
+        eps = [d for d in eps if os.path.exists(os.path.join(d, "meta.json"))
+               and json.load(open(os.path.join(d, "meta.json"))).get("load_mix", "core") == mix]
+        print(f"calibration episodes with load mix '{mix}': {len(eps)}")
     eps = [d for d in eps if os.path.exists(os.path.join(d, "meta.json")) and usable(d)]
     train = [d for d in eps if not holdout_of(os.path.basename(d), frac)]
     hold = [d for d in eps if holdout_of(os.path.basename(d), frac)]
@@ -114,7 +123,7 @@ def main(args):
     zsq = defaultdict(list)
     labs = []
     for d in train:
-        lab = L.label_episode(d, slo=slo, cal=unit)
+        lab = L.label_episode(d, slo=slo, cal=unit, write=False)
         if lab["stalled"]:
             continue
         labs.append(lab)
@@ -144,7 +153,7 @@ def main(args):
     def fp_rate(dirs, z):
         per = defaultdict(lambda: [0, 0])
         for d in dirs:
-            lab = L.label_episode(d, slo=slo, cal={"z": z, "phi": phi})
+            lab = L.label_episode(d, slo=slo, cal={"z": z, "phi": phi}, write=False)
             if lab["stalled"]:
                 continue
             for svc, v in lab["services"].items():

@@ -487,7 +487,8 @@ def main():
             "action_type": action, "action_target": target if action != "noop" else None,
             "action_on_fault_target": (a.fault != "none" and action != "noop" and target == fault_target),
             "action_delay_s": round(delay, 1), "load_rate": a.rate, "seed": a.seed,
-            "m_seconds": M_S, "harness_version": 3}
+            "m_seconds": M_S, "harness_version": 3,
+            "load_mix": os.environ.get("ARC_MIX", "core"), "load_rate_env": os.environ.get("ARC_RATE")}
     log(f"episode {ep} [{arcenv.CLUSTER}]: fault={a.fault}({meta['fault_param']})@{meta['fault_target']} "
         f"action={action}@{target} delay={delay:.0f}s")
 
