@@ -24,6 +24,11 @@ ROLES = ["target", "up1", "up2+", "down", "other", "no-target"]
 ACTIONS = ["noop", "restart-pod", "rollout-restart", "scale-up", "cpu-bump", "drain"]
 
 
+DROP = set()          # feature groups switched off for the ablation (--drop)
+GROUPS = {"state": set(FEATS) - {"is_action_target"}, "bad_before": {"bad_before"}, "latency": {"p50_ratio", "p95_ratio", "p99_ratio"},
+          "role": set(), "action": set(), "graph": set()}
+
+
 def tensors(ep, key):
     r = roles(ep)
     names = [n["service"] for n in ep["nodes"]]
@@ -38,12 +43,15 @@ def tensors(ep, key):
                 x = 1.0 if k in RATIO else 0.0
             if k in RATIO:
                 x = torch.log(torch.tensor(max(x, 1e-3))).item()   # ratios on a log scale: 2x and 0.5x symmetric
-            v.append(x)
-        v += [1.0 if r[n["service"]] == x else 0.0 for x in ROLES] + a
+            v.append(0.0 if any(k in GROUPS[g] for g in DROP) else x)
+        v += [0.0 if "role" in DROP else (1.0 if r[n["service"]] == x else 0.0) for x in ROLES]
+        v += [0.0] * len(a) if "action" in DROP else a
         X.append(v)
         y = n["y"].get(key)
         ok = y is not None and (n["y"].get("n_before") or 0) >= MIN_N and (n["y"].get("n_after") or 0) >= MIN_N
         Y.append(y if ok else 0.0); M.append(1.0 if ok else 0.0)
+    if "graph" in DROP:
+        ep = dict(ep, edges=[])
     src = [idx[e["src"]] for e in ep["edges"] if e["src"] in idx and e["dst"] in idx]
     dst = [idx[e["dst"]] for e in ep["edges"] if e["src"] in idx and e["dst"] in idx]
     return (torch.tensor(X), torch.tensor(Y), torch.tensor(M),
@@ -93,6 +101,9 @@ def main(args):
     key = args[args.index("--target") + 1] if "--target" in args else "y_peak"
     seeds = int(args[args.index("--seeds") + 1]) if "--seeds" in args else 3
     epochs = int(args[args.index("--epochs") + 1]) if "--epochs" in args else 300
+    if "--drop" in args:
+        DROP.update(args[args.index("--drop") + 1].split(","))
+        print("ablation: inputs switched off:", sorted(DROP))
     eps = load(path)
     train = [e for e in eps if e["split"] == "train"]; test = [e for e in eps if e["split"] == "test"]
     blocks = sorted({(e["plan"], e["block"]) for e in train})
