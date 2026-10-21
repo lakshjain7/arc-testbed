@@ -71,7 +71,7 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_sca
     'level' is what is applied; 'level_nominal' is the plan's level, the same within a block."""
     rng = random.Random(seed)
     target_scale = target_scale or {}
-    T = targets or TARGETS              # batch 2 adds services of the new flows as fault / action targets
+    T = list(dict.fromkeys(targets)) if targets else TARGETS   # de-duplicated              # batch 2 adds services of the new flows as fault / action targets
     conds = [("none", None), ("pod-kill", None)] + [(f, l) for f in ("network-delay", "net-loss", "cpu-squeeze", "db-delay")
                                                     for l in levels.get(f, [])]         + ([("pod-hang", None)] if levels.get("pod-hang") else []) + (HARD if hard else [])
     eps, block = [], 0
@@ -84,7 +84,13 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_sca
             block += 1
             acts = ACTIONS[:]
             rng.shuffle(acts)
-            ftargets = (rng.sample(T, len(T)) + [rng.choice(T)])[:7]
+            # one fault target per episode of the block (7): whole random permutations of the targets,
+            # repeated as needed, so fewer than 7 targets still give complete blocks (lab, 21 Oct: with
+            # 3 targets the old code made blocks of 4 and dropped actions)
+            ftargets = []
+            while len(ftargets) < 7:
+                ftargets += rng.sample(T, len(T))
+            ftargets = ftargets[:7]
             for i, (act, ft) in enumerate(zip(acts, ftargets), 1):
                 if fault == "none":
                     at = rng.choice(T)
