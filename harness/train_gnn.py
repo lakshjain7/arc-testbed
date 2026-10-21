@@ -106,10 +106,12 @@ def main(args):
         print("ablation: inputs switched off:", sorted(DROP))
     eps = load(path)
     train = [e for e in eps if e["split"] == "train"]; test = [e for e in eps if e["split"] == "test"]
+    if "--test" in args:        # unseen-system test: train on this file's train split, test on ALL of another
+        test = load(args[args.index("--test") + 1])
     blocks = sorted({(e["plan"], e["block"]) for e in train})
     val_b = set(blocks[int(0.85 * len(blocks)):])
     tr = [e for e in train if (e["plan"], e["block"]) not in val_b]; va = [e for e in train if (e["plan"], e["block"]) in val_b]
-    D = {id(e): tensors(e, key) for e in eps}
+    D = {id(e): tensors(e, key) for e in eps + [t for t in test if t not in eps]}
     res = []
     for seed in range(seeds):
         torch.manual_seed(seed); random.seed(seed)

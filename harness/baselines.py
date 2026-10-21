@@ -114,6 +114,8 @@ def main(args):
     key = args[args.index("--target") + 1] if "--target" in args else "y_peak"
     eps = load(path)
     train = [e for e in eps if e["split"] == "train"]; test = [e for e in eps if e["split"] == "test"]
+    if "--test" in args:        # unseen-system test: train on this file's train split, test on ALL of another
+        test = load(args[args.index("--test") + 1])
     m_act, m_role, line = fit(train, key)
     preds = {
         "B0 zero": lambda ep, n, r: 0.0,
