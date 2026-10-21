@@ -64,7 +64,7 @@ def plan_path(name):
 SCALED_FAULTS = ("network-delay", "net-loss")     # the squeeze is already relative to each service's own use
 
 
-def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_scale=None, targets=None):
+def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_scale=None, targets=None, db_scale=None):
     """target_scale {service: factor}: the delay / loss level is multiplied by the factor when the fault
     lands on that service. The same delay hurts far more on a service that is called many times per
     user request (lab machine: 4 ms saturated order and basic every time, the other four never).
@@ -92,7 +92,8 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_sca
                     at = ft
                 else:
                     at = rng.choice([t for t in T if t != ft])
-                lvl = round(level * target_scale.get(ft, 1), 2) if fault in SCALED_FAULTS else level
+                lvl = (round(level * target_scale.get(ft, 1), 2) if fault in SCALED_FAULTS
+                       else round(level * (db_scale or {}).get(ft, 1), 2) if fault == "db-delay" else level)
                 eps.append({"id": f"ep_{name}_{arcenv.CLUSTER}_b{block:03d}_{i}", "block": block, "fault": fault,
                             "level": lvl, "level_nominal": level, "fault_target": ft if fault != "none" else None, "action": act,
                             "action_target": at, "delay": round(rng.uniform(60, delay_max)),
@@ -282,6 +283,8 @@ def main():
                     help="cpu-squeeze levels: CPU limit as a multiple of the service's recent average use, e.g. 2.5; "
                          "'none' leaves a fault out of the plan (works for --delay and --loss too)")
     pl.add_argument("--db-delay", type=num, default=[], help="batch 2: delay (ms) on the target's database traffic, e.g. 10,30")
+    pl.add_argument("--db-scale", default={}, type=lambda v: {k: float(x) for k, x in (kv.split("=") for kv in v.split(",") if kv)},
+                    help="multiply the db-delay level per fault target (separate from --target-scale), e.g. ts-station-service=0.8")
     pl.add_argument("--targets", type=lambda v: [x for x in v.split(",") if x], default=None,
                     help="fault / action targets (default: the six batch-1 services)")
     pl.add_argument("--hang", action="store_true", help="batch 2: include the pod-hang fault (one level)")
@@ -297,7 +300,7 @@ def main():
         seed = a.seed if a.seed is not None else int(hashlib.md5(f"{a.name}/{arcenv.CLUSTER}".encode()).hexdigest()[:8], 16)
         plan = make_plan(a.name, a.episodes, seed, a.hard, a.delay_max,
                          {"network-delay": a.delay, "net-loss": a.loss, "cpu-squeeze": a.squeeze,
-                          "db-delay": a.db_delay, "pod-hang": a.hang}, a.target_scale, a.targets)
+                          "db-delay": a.db_delay, "pod-hang": a.hang}, a.target_scale, a.targets, a.db_scale)
         json.dump(plan, open(plan_path(a.name), "w"), indent=1)
         eps = plan["episodes"]
         print(f"wrote {plan_path(a.name)}: {len(eps)} episodes in {eps[-1]['block']} blocks of 7, seed {seed}"
@@ -307,6 +310,10 @@ def main():
             print("  per-target scale for delay and loss:", a.target_scale, "-> applied levels:",
                   dict(Counter(f"{e['fault']}@{e['fault_target'][3:-8]}:{e['level']}" for e in eps
                                if e["fault"] in SCALED_FAULTS and e["fault_target"] in a.target_scale)))
+        if a.db_scale:
+            print("  per-target scale for db-delay:", a.db_scale, "-> applied levels:",
+                  dict(Counter(f"db-delay@{e['fault_target'][3:-8]}:{e['level']}" for e in eps
+                               if e["fault"] == "db-delay" and e["fault_target"] in a.db_scale)))
         print("  actions:", dict(Counter(e["action"] for e in eps)))
         print(f"  at ~10 min per episode: about {len(eps)*10/60:.0f} hours ({len(eps)*10/60/24:.1f} days) on this cluster")
     elif a.cmd in ("run", "calibrate"):
