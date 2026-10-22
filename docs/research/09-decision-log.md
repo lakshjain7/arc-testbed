@@ -183,6 +183,33 @@ Related: Sage (CBN latency propagation callee -> caller, diagnosis), HyperODE-RC
 GRAF and LQ-GNN (prediction feeding resource decisions). None models a remediation action as a controlled
 input to every service's trajectory.
 
+## 10b. Explainable blast radius (Oct 22, `harness/blast_radius.py`)
+
+**Why.** Laksh asked for the blast radius to be explainable: which services, how much, in what ORDER and
+along which CALLS, and what KIND of damage. Per-service totals alone hide the chain.
+**How.** From the 15 s trajectories: onset = first step after the action with the bad share >= 5 points
+above its pre-action level for two steps in a row; recovery = first step after which it stays within 5
+points; damage profile = change in bad share, error share, p95 ratio, traffic ratio, CPU throttling; "via"
+= the earlier-hit neighbour on the call graph, with the action target as the origin at t = 0 (a drained or
+restarting target often has no traffic, so it cannot show its own rise).
+**Results (batch 1 / batch 2).**
+- Services hit per episode: drain 3.35 / 2.77, restart-pod 1.93 / 1.83, rollout-restart 1.80 / 1.49,
+  scale-up 0.99 / 0.56, cpu-bump 0.63 / 0.51, noop 0.62 / 0.63 (the no-op rate is the noise floor:
+  ~0.6 false "hits" per episode, all on services not connected to any target).
+- Almost every hit is an UPSTREAM caller: e.g. drain 3.29 callers vs 0.02 callees per episode.
+- **The chain follows the call graph:** for real actions 75-96 % of hit services (86-96 % for restart,
+  rollout, drain) have an earlier-hit neighbour on the call graph; for no-op only 15-21 % (chance level of
+  the noise). This is the evidence that damage PROPAGATES along calls rather than appearing at random.
+- **Timing:** median onset after the action: direct callers 30 s (batch 2: 45 s), 2-3 hops 45 s; i.e. the
+  damage climbs one hop per ~15 s step toward the gateway. Callees rarely hit, and late (60-105 s).
+- **Damage kind:** a drain makes callers fail FAST (errors +80-100 points but p95 x0.2-0.6: requests fail
+  quickly), whereas restart / rollout make them fail SLOW (p95 x60-450 plus errors). The damage profile
+  separates "unavailable" from "slow", which the single score cannot.
+- Example (ep_main2_arc_b001_1, drain on order, no fault): gateway, preserve, security +15 s (1 hop),
+  seat +30 s, travel +30 s via preserve (2 hops), inside-payment +105 s; 6 services, 548 points.
+**Use in the paper.** The blast radius figure: a timed tree per action type; the "chain follows calls"
+statistic against the no-op noise floor; the fast-fail vs slow-fail split.
+
 ## 11. Decisions on scope (with Laksh)
 
 - Paper option A: a research paper (ARC: dataset + harness + action-conditioned prediction + unseen-system
