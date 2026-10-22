@@ -117,10 +117,35 @@ def main(args):
     if "--test" in args:        # unseen-system test: train on this file's train split, test on ALL of another
         test = load(args[args.index("--test") + 1])
     m_act, m_role, line = fit(train, key)
+    # B4 diffusion (what the closest prior work uses): damage spreads from the action target along the call
+    # graph, weakening by a factor per hop in either direction; one scale per action type fitted on train
+    def spread(ep, decay=0.5):
+        out_, in_ = defaultdict(set), defaultdict(set)
+        for e in ep["edges"]:
+            out_[e["src"]].add(e["dst"]); in_[e["dst"]].add(e["src"])
+        tgt = ep["action"]["target"]; score = defaultdict(float)
+        if not tgt:
+            return score
+        score[tgt] = 1.0; frontier = {tgt}; seen = {tgt}; w = 1.0
+        while frontier:
+            w *= decay; nxt = set()
+            for u in frontier:
+                for v in out_[u] | in_[u]:
+                    if v not in seen:
+                        seen.add(v); nxt.add(v); score[v] = w
+            frontier = nxt
+        return score
+    num, den = defaultdict(float), defaultdict(float)
+    for ep in train:
+        sc = spread(ep)
+        for n, y in scored(ep, key):
+            x = sc.get(n["service"], 0.0); a = ep["action"]["type"]; num[a] += x * y; den[a] += x * x
+    beta = {a: num[a] / den[a] if den[a] else 0.0 for a in num}
     preds = {
         "B0 zero": lambda ep, n, r: 0.0,
         "B1 action mean": lambda ep, n, r: m_act.get(ep["action"]["type"], 0.0),
         "B2 role": lambda ep, n, r: m_role.get((ep["action"]["type"], r[n["service"]]), m_act.get(ep["action"]["type"], 0.0)),
+        "B4 diffusion": lambda ep, n, r: beta.get(ep["action"]["type"], 0.0) * spread(ep).get(n["service"], 0.0),
         "B3 role + state": lambda ep, n, r: (lambda k: (line[k][0] + line[k][1] * n["x"]["bad_before"]) if k in line
                                              else m_role.get(k, 0.0))((ep["action"]["type"], r[n["service"]])),
     }

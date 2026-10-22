@@ -108,10 +108,22 @@ def main(args):
     train = [e for e in eps if e["split"] == "train"]; test = [e for e in eps if e["split"] == "test"]
     if "--test" in args:        # unseen-system test: train on this file's train split, test on ALL of another
         test = load(args[args.index("--test") + 1])
+        k = int(args[args.index("--topup") + 1]) if "--topup" in args else 0
+        if k:                   # adaptation: move the first k blocks of the new system into training
+            tb = sorted({(e["plan"], e["block"]) for e in test})[:k]
+            train = train + [e for e in test if (e["plan"], e["block"]) in tb]
+            test = [e for e in test if (e["plan"], e["block"]) not in tb]
+            print(f"top-up: {k} blocks of the new system added to training; testing on the other {len(test)} episodes")
     blocks = sorted({(e["plan"], e["block"]) for e in train})
     val_b = set(blocks[int(0.85 * len(blocks)):])
     tr = [e for e in train if (e["plan"], e["block"]) not in val_b]; va = [e for e in train if (e["plan"], e["block"]) in val_b]
-    D = {id(e): tensors(e, key) for e in eps + [t for t in test if t not in eps]}
+    pool = {id(e): e for e in eps + train + test}
+
+    class Lazy(dict):        # tensors built on first use, for any episode in any of the lists
+        def __missing__(self, k):
+            v = self[k] = tensors(pool[k], key)
+            return v
+    D = Lazy()
     res = []
     for seed in range(seeds):
         torch.manual_seed(seed); random.seed(seed)
@@ -137,6 +149,11 @@ def main(args):
         r = evaluate(model, test, [D[id(e)] for e in test], key)
         res.append(r)
         print(f"  seed {seed}: stopped at epoch {ep_i + 1}, validation MAE {best:.2f} -> test MAE {r[0]:.2f}, Spearman {r[1]:.3f}, top-1 {r[2]:.2f}", flush=True)
+    if "--by-fault" in args:    # last seed's model, split by fault type
+        for f in sorted({e["fault"]["type"] for e in test}):
+            sub = [e for e in test if e["fault"]["type"] == f]
+            r = evaluate(model, sub, [D[id(e)] for e in sub], key)
+            print(f"    fault {f:14s} {len(sub):4d} episodes: MAE {r[0]:.2f}, Spearman {r[1]:.3f}, top-1 {r[2]:.2f}")
     m = [sum(x[i] for x in res) / len(res) for i in range(3)]
     sd = [(sum((x[i] - m[i]) ** 2 for x in res) / max(len(res) - 1, 1)) ** 0.5 for i in range(3)]
     print(f"GNN over {seeds} seeds, target {key}: MAE {m[0]:.2f} ± {sd[0]:.2f}, Spearman {m[1]:.3f} ± {sd[1]:.3f}, "
