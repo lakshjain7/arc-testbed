@@ -172,7 +172,11 @@ callers about 9x more than the other way** (the pilot's "collateral is upstream"
 Action impulse on the target: restart-pod +3.0, +2.8, -4.8 points at +15/30/45 s (worse while down, then
 better). Rollout from the action: in-system step MAE 3.72 vs persistence 4.66; unseen system 3.52 vs
 persistence 3.03 (the shared linear coefficients do not transfer). ~2 ms per 3-minute rollout. Graph-network
-version (per-service learned coefficients) in progress; first smoke test step MAE 3.14 in-system, ~5 ms.
+version (`harness/dyn_gnn.py`, per-service learned coefficients, trained by rolling out 3 minutes):
+in-system step MAE 2.17 +- 0.05, peak error 2.10 (linear 3.72 / 4.02, persistence 4.66 / 5.35);
+UNSEEN SYSTEM step MAE 2.21 +- 0.01, peak error 2.61 (linear 3.52 / 4.01, persistence 3.03 / 3.92), i.e.
+it keeps its in-system accuracy on the new system, unlike the linear version. 3-5 ms per rollout on a
+laptop CPU. Roles: linear version = the explanation, graph version = the predictor.
 Mathematical framing: a linear dynamical system / network VAR on the service graph, the discrete form of
 dx/dt = -(1-a)x + Wx + Bu; actions are randomised, so u is a causal effect, not a correlation.
 Related: Sage (CBN latency propagation callee -> caller, diagnosis), HyperODE-RCA (neural ODE, diagnosis),
