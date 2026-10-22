@@ -141,8 +141,32 @@ def main(args):
         for n, y in scored(ep, key):
             x = sc.get(n["service"], 0.0); a = ep["action"]["type"]; num[a] += x * y; den[a] += x * x
     beta = {a: num[a] / den[a] if den[a] else 0.0 for a in num}
+    # B5 dependency map (commercial service maps): every caller within 3 hops of the changed service is at
+    # risk; the predicted damage is the training mean for that hop distance, whatever the action
+    hopmean = defaultdict(list)
+    for ep in train:
+        r = roles(ep)
+        for n, y in scored(ep, key):
+            hopmean[r[n["service"]] if r[n["service"]] in ("target", "up1", "up2+") else "rest"].append(y)
+    hopmean = {k: sum(v) / len(v) for k, v in hopmean.items()}
+    # B6 gradient-boosted trees on each service's own features + role + action, no graph aggregation
+    from sklearn.ensemble import GradientBoostingRegressor
+    FE = ["rps_ratio", "err_share", "cpu_use_frac", "throttled", "mem_ratio", "not_ready", "bad_before", "is_action_target"]
+    RO = ["target", "up1", "up2+", "down", "other", "no-target"]
+    AC = ["noop", "restart-pod", "rollout-restart", "scale-up", "cpu-bump", "drain"]
+    def feats(ep, n, r):
+        return ([n["x"].get(k) if n["x"].get(k) is not None else (1.0 if k.endswith("ratio") else 0.0) for k in FE]
+                + [1.0 if r[n["service"]] == x else 0.0 for x in RO] + [1.0 if ep["action"]["type"] == x else 0.0 for x in AC])
+    Xtr, Ytr = [], []
+    for ep in train:
+        r = roles(ep)
+        for n, y in scored(ep, key):
+            Xtr.append(feats(ep, n, r)); Ytr.append(y)
+    gbr = GradientBoostingRegressor(loss="absolute_error", n_estimators=300, max_depth=3, learning_rate=0.05, random_state=0).fit(Xtr, Ytr)
     preds = {
         "B0 zero": lambda ep, n, r: 0.0,
+        "B5 dependency map": lambda ep, n, r: hopmean.get(r[n["service"]] if r[n["service"]] in ("target", "up1", "up2+") else "rest", 0.0),
+        "B6 trees, no graph": lambda ep, n, r: float(gbr.predict([feats(ep, n, r)])[0]),
         "B1 action mean": lambda ep, n, r: m_act.get(ep["action"]["type"], 0.0),
         "B2 role": lambda ep, n, r: m_role.get((ep["action"]["type"], r[n["service"]]), m_act.get(ep["action"]["type"], 0.0)),
         "B4 diffusion": lambda ep, n, r: beta.get(ep["action"]["type"], 0.0) * spread(ep).get(n["service"], 0.0),
@@ -167,6 +191,28 @@ def main(args):
         print(f"  {name:18s} {100 * err / max(cnt, 1):7.2f} {sum(rhos) / max(len(rhos), 1):9.3f} "
               f"{(hits / eps_n if eps_n else 0):10.2f}   {cnt}")
     print("  (top-1 hit counts episodes where some service rose by more than 5 points)")
+    # Yes/no view (the closest prior work predicts harmed / not harmed per service): harmed = the service's
+    # damage is at least HARM points. B7 = a classifier trained for exactly that; B5 = "every caller within
+    # 2 hops is harmed"; B3 and B6 thresholded at the same level.
+    from sklearn.ensemble import GradientBoostingClassifier
+    HARM = 0.10
+    clf = GradientBoostingClassifier(n_estimators=300, max_depth=3, learning_rate=0.05, random_state=0).fit(Xtr, [y >= HARM for y in Ytr])
+    yes_no = {
+        "B5 callers <= 2 hops": lambda ep, n, r: r[n["service"]] in ("up1", "up2+") and ep["action"]["type"] != "noop",
+        "B3 rule >= 10 pts": lambda ep, n, r: preds["B3 role + state"](ep, n, r) >= HARM,
+        "B6 trees >= 10 pts": lambda ep, n, r: preds["B6 trees, no graph"](ep, n, r) >= HARM,
+        "B7 yes/no classifier": lambda ep, n, r: bool(clf.predict([feats(ep, n, r)])[0]),
+    }
+    print(f"  yes/no 'harmed' (damage >= {int(100 * HARM)} points): {'precision':>9s} {'recall':>7s} {'F1':>6s}")
+    for name, p in yes_no.items():
+        tp = fp = fn = 0
+        for ep in test:
+            r = roles(ep)
+            for n, y in scored(ep, key):
+                h, ph = y >= HARM, p(ep, n, r)
+                tp += h and ph; fp += (not h) and ph; fn += h and (not ph)
+        pr = tp / max(tp + fp, 1); rc = tp / max(tp + fn, 1)
+        print(f"    {name:24s} {pr:9.2f} {rc:7.2f} {2 * pr * rc / max(pr + rc, 1e-9):6.2f}")
 
 
 if __name__ == "__main__":

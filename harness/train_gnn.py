@@ -149,6 +149,20 @@ def main(args):
         r = evaluate(model, test, [D[id(e)] for e in test], key)
         res.append(r)
         print(f"  seed {seed}: stopped at epoch {ep_i + 1}, validation MAE {best:.2f} -> test MAE {r[0]:.2f}, Spearman {r[1]:.3f}, top-1 {r[2]:.2f}", flush=True)
+    # yes/no view, comparable with B7: harmed = damage >= 10 points; ARC predicts harmed when its predicted
+    # damage is >= 10 points (last seed's model)
+    tp = fp = fn = 0
+    model.eval()
+    with torch.no_grad():
+        for e in test:
+            X, Y, M, s_, d_ = D[id(e)]
+            p = model(X, s_, d_)
+            for i in range(len(Y)):
+                if M[i] > 0:
+                    h, ph = Y[i].item() >= 0.10, p[i].item() >= 0.10
+                    tp += h and ph; fp += (not h) and ph; fn += h and (not ph)
+    pr = tp / max(tp + fp, 1); rc = tp / max(tp + fn, 1)
+    print(f"  ARC yes/no 'harmed' (>= 10 points): precision {pr:.2f}, recall {rc:.2f}, F1 {2 * pr * rc / max(pr + rc, 1e-9):.2f}")
     if "--by-fault" in args:    # last seed's model, split by fault type
         for f in sorted({e["fault"]["type"] for e in test}):
             sub = [e for e in test if e["fault"]["type"] == f]

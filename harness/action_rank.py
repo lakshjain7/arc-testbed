@@ -103,6 +103,40 @@ def main(args):
         mae = sum(abs(cache[id(e)] - net_actual(e)) for e in test) / len(test)
         print(f"  ARC seed {seed}: {100 * accs[-1]:.1f} % of pairs ordered right; net-effect MAE {100 * mae:.1f} points; "
               f"scoring one candidate action {1000 * per:.2f} ms, all six {6000 * per:.1f} ms", flush=True)
+        # T9 hard pairs: the two action types have similar average effects (training means within 5
+        # points), so knowing the action type alone is close to a coin flip
+        hard = [(a, b) for a, b in pairs if abs(act_mean.get(a["action"]["type"], 0) - act_mean.get(b["action"]["type"], 0)) < 0.05]
+        hb = sum((act_mean.get(a["action"]["type"], 0) < act_mean.get(b["action"]["type"], 0)) == (net_actual(a) < net_actual(b)) for a, b in hard)
+        ha = sum((cache[id(a)] < cache[id(b)]) == (net_actual(a) < net_actual(b)) for a, b in hard)
+        print(f"    hard pairs ({len(hard)}): action-mean {100 * hb / max(len(hard), 1):.1f} %, ARC {100 * ha / max(len(hard), 1):.1f} %")
+        # bootstrap 95 % interval of ARC's pair accuracy and of its lead over the action-mean baseline,
+        # resampling incident kinds (pairs within a kind are not independent)
+        rng = random.Random(seed); kinds = list(groups)
+        kind_of = lambda e: (e["fault"]["type"], e["fault"]["target"])
+        byk = defaultdict(list)
+        for a, b in pairs:
+            byk[kind_of(a)].append(((cache[id(a)] < cache[id(b)]) == (net_actual(a) < net_actual(b)),
+                                    (act_mean.get(a["action"]["type"], 0) < act_mean.get(b["action"]["type"], 0)) == (net_actual(a) < net_actual(b))))
+        accb, leadb = [], []
+        for _ in range(1000):
+            smp = [x for k in (rng.choice(kinds) for _ in kinds) for x in byk.get(k, [])]
+            if smp:
+                accb.append(sum(x for x, _ in smp) / len(smp)); leadb.append((sum(x for x, _ in smp) - sum(y for _, y in smp)) / len(smp))
+        accb.sort(); leadb.sort()
+        print(f"    95 % interval: ARC accuracy {100 * accb[25]:.1f}-{100 * accb[974]:.1f} %; lead over action-mean "
+              f"{100 * leadb[25]:+.1f} to {100 * leadb[974]:+.1f} points ({100 * sum(l <= 0 for l in leadb) / len(leadb):.1f} % of resamples <= 0)")
+        # T11 damage-control gate: an action is HARMFUL if its observed net effect is >= 20 points; ARC blocks
+        # it if its predicted net effect is >= a threshold. Compared with blocking by action type.
+        harmful = [net_actual(e) >= 0.20 for e in test if scored_idx(e)]
+        evs = [e for e in test if scored_idx(e)]
+        print(f"    gate: {sum(harmful)} harmful of {len(harmful)} actions (net effect >= 20 points)")
+        for thr in (0.05, 0.10, 0.20, 0.40):
+            for name, f in (("ARC", lambda e: cache[id(e)]), ("action-mean", lambda e: act_mean.get(e["action"]["type"], 0))):
+                block = [f(e) >= thr for e in evs]
+                caught = sum(b and h for b, h in zip(block, harmful)) / max(sum(harmful), 1)
+                wrong = sum(b and not h for b, h in zip(block, harmful)) / max(len(harmful) - sum(harmful), 1)
+                print(f"      block if predicted >= {int(100 * thr):2d} pts  {name:12s} catches {100 * caught:5.1f} % of harmful, "
+                      f"wrongly blocks {100 * wrong:5.1f} % of safe")
     m = sum(accs) / len(accs); sd = (sum((a - m) ** 2 for a in accs) / max(len(accs) - 1, 1)) ** 0.5
     print(f"ARC over {seeds} seeds: {100 * m:.1f} ± {100 * sd:.1f} % of pairs ordered right (action-mean baseline "
           f"{100 * base_right / max(len(pairs), 1):.1f} %, coin flip 50 %)")

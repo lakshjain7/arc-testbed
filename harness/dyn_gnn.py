@@ -87,6 +87,49 @@ def evaluate(model, data, min_n):
     return {k: (100 * v[0] / max(v[1], 1), 100 * v[2] / max(v[3], 1)) for k, v in tot.items()}, cost / max(len(data), 1)
 
 
+def chain_eval(model, eps, data, min_n=5, thr=0.05):
+    """T12: blast radius from PREDICTIONS vs the measured one. A service is hit when its bad share rises
+    >= thr above its level at the action for two consecutive 15 s steps; onset = first such step.
+    Compared with the dependency-map rule (every caller within 2 hops of the target is hit)."""
+    from dyn_linear import graph
+    tot = {"ARC": [0, 0, 0], "dependency map": [0, 0, 0]}; rhos = []
+    model.eval()
+    with torch.no_grad():
+        for ep, (X, s, d_, d0, Y, Wt, T, D, W) in zip(eps, data):
+            if ep["action"]["type"] == "noop":
+                continue
+            P = model(X, s, d_, d0, T).numpy(); ka = D.shape[1] - T - 1
+            S, callees, callers, role = graph(ep)
+            def onset(curve, base):
+                for k in range(T - 1):
+                    if curve[k] - base >= thr and curve[k + 1] - base >= thr:
+                        return k
+                return None
+            act_on, pred_on = {}, {}
+            for i in range(len(S)):
+                ks = [k for k in range(T) if W[i, ka + 1 + k] >= min_n and not np.isnan(D[i, ka + 1 + k])]
+                if len(ks) < T // 2:
+                    continue                     # too little traffic to judge this service
+                a = onset([np.nan_to_num(D[i, ka + 1 + k]) for k in range(T)], float(d0[i]))
+                p = onset(list(P[i]), float(d0[i]))
+                act_on[i], pred_on[i] = a, p
+            for name, pred in (("ARC", {i: v is not None for i, v in pred_on.items()}),
+                               ("dependency map", {i: role[i] in ("up1", "up2+") for i in act_on})):
+                for i, a in act_on.items():
+                    h, ph = a is not None, pred[i]
+                    tot[name][0] += h and ph; tot[name][1] += (not h) and ph; tot[name][2] += h and (not ph)
+            both = [i for i in act_on if act_on[i] is not None and pred_on[i] is not None]
+            if len(both) >= 3:
+                from baselines import spearman
+                r = spearman([pred_on[i] for i in both], [act_on[i] for i in both])
+                if r is not None:
+                    rhos.append(r)
+    for name, (tp, fp, fn) in tot.items():
+        pr, rc = tp / max(tp + fp, 1), tp / max(tp + fn, 1)
+        print(f"    predicted chain, {name:15s}: services hit precision {pr:.2f}, recall {rc:.2f}, F1 {2 * pr * rc / max(pr + rc, 1e-9):.2f}")
+    print(f"    onset ORDER, ARC vs measured: Spearman {np.mean(rhos) if rhos else float('nan'):.2f} over {len(rhos)} episodes with >= 3 services hit in both")
+
+
 def main(args):
     eps = load(args[0])
     seeds = int(args[args.index("--seeds") + 1]) if "--seeds" in args else 3
@@ -120,6 +163,8 @@ def main(args):
                     break
         model.load_state_dict(state)
         r, cost = evaluate(model, te, min_n); res.append(r)
+        if "--chain" in args and seed == seeds - 1:
+            chain_eval(model, test, te)
         print(f"  seed {seed}: epoch {ep_i + 1}, validation step MAE {best:.2f} -> test step MAE {r['model'][0]:.2f}, "
               f"peak error {r['model'][1]:.2f} (persistence {r['persistence'][0]:.2f} / {r['persistence'][1]:.2f}); "
               f"{1000 * cost:.1f} ms per rollout", flush=True)

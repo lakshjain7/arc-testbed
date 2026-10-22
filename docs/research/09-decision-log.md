@@ -231,6 +231,46 @@ large in absolute terms (16 and 37 points summed over all services), so ARC is b
 than at stating their exact total damage. Next: report "hard pairs" (pairs where the two action types have
 similar averages), where the baseline is near chance and ARC's added value should be clearest.
 
+## 10d. Full evaluation round, 22 Oct (protocol: docs/research/10-evaluation-protocol.md)
+
+**New baselines (B5-B7) added after Laksh asked for existing approaches, not only our own rules.**
+y_peak, services with >= 30 requests. MAE (points) / Spearman per episode / top-1 worst-hit.
+| Test | B5 dependency map | B6 trees, no graph | B3 best rule | ARC |
+|---|---|---|---|---|
+| T1 batch 1 (133) | 6.46 / 0.41 / 15 % | 3.96 / **0.74** / 39 % | 3.82 / 0.62 / 35 % | **1.84** / 0.69 / **77 %** |
+| T2 unseen system (500) | 5.80 / 0.43 / 16 % | 3.91 / **0.76** / 34 % | 4.17 / 0.58 / 35 % | **3.01** / 0.65 / **56 %** |
+| T4 unseen fault db-delay (126) | 4.71 / 0.43 / 18 % | 2.61 / **0.76** / 48 % | 3.13 / 0.65 / 48 % | **1.86** / 0.68 / **67 %** |
+**Honest reading.** ARC wins clearly on error (MAE) and on finding the worst-hit service. Gradient-boosted
+trees on per-service features (B6) rank the services within an episode BETTER than ARC (Spearman 0.74-0.76
+vs 0.65-0.69): they order the many small effects well but miss which service is hit hardest. This must be
+reported; it also suggests a combined model (ARC + per-service trees, or a ranking loss) as an easy
+improvement.
+**Yes/no "harmed" (>= 10 points), the closest prior work's view.** F1: B5 0.60 / 0.56 / 0.63,
+B7 classifier 0.73 / 0.69 / 0.73, ARC 0.76 / 0.70 / 0.74 (T1 / T2 / T4); ARC has the highest precision
+(0.85-0.91). On the binary question ARC is only slightly better than a dedicated classifier; ARC's
+advantage is in magnitude, worst-hit service, time course and the gate, i.e. exactly what the binary
+formulation cannot express. The dependency map flags every caller: high recall, precision ~0.5.
+**T4, the second unseen fault (db-delay), generalises well, unlike pod-hang:** db-delay episodes MAE 2.04,
+top-1 73 % (pod-hang in T3: 6.43, 30 %). Dynamic model step MAE 1.23 vs persistence 2.12. Action ranking
+85.1 % vs action-mean 75.9 %. Interpretation: a slow dependency produces symptoms like the network delay
+ARC has seen; a hung service (alive, answering nothing) is a qualitatively new pattern.
+**T9 hard pairs** (action types with mean effects within 5 points): batch 1 has only 10 such pairs (too few
+to conclude); unseen system 142 pairs: action-mean 68.3 %, ARC 73.9 / 68.3 / 77.5 % over 3 seeds (mean 73 %).
+**T10 confidence (bootstrap over incident kinds, 1,000 resamples).** ARC's lead over action-mean in action
+ranking: batch 1 -2.4 to +12.6 points (NOT significant; 15-35 % of resamples <= 0); unseen system +1.4 to
++11.5 points (significant; 0.1-1.2 % of resamples <= 0).
+**T11 damage-control gate (harmful = observed net effect >= 20 points).** Block if predicted >= 20 points:
+| Test | ARC catches / wrongly blocks | action-type rule catches / wrongly blocks |
+|---|---|---|
+| batch 1 (39 harmful of 133) | 97 % / 2 % | 100 % / 19 % |
+| unseen system (111 of 491) | 87-89 % / 6-7 % | 95 % / 28 % |
+The headline safety result: about the same harmful actions caught, with 4-10x fewer safe actions blocked.
+**T12 blast radius from PREDICTIONS (dynamic GNN) vs the measured chain**, real actions only: which services
+are hit, F1 ARC 0.74 vs dependency map 0.64 (batch 1); 0.71 vs 0.55 (unseen); ARC precision 0.80 / 0.67 vs
+0.50 / 0.40. ORDER of onset: not predicted (Spearman -0.21 and -0.15 over only 5 and 18 episodes with >= 3
+services hit in both; at 15 s steps most hits look simultaneous). Claim "which and how much", not "in what
+order", from predictions; the order is shown on measured chains (10b).
+
 ## 11. Decisions on scope (with Laksh)
 
 - Paper option A: a research paper (ARC: dataset + harness + action-conditioned prediction + unseen-system
