@@ -230,8 +230,11 @@ def cmd_calibrate(a):
             "action": "noop", "action_target": TARGETS[i % len(TARGETS)], "delay": 60, "seed": 9000 + i}
            for i in range(start, start + a.episodes)]
     run_list([eps])
-    log("calibration episodes done; fitting thresholds on every no-fault no-op episode of this machine")
-    r = subprocess.run([sys.executable, arcenv.script("harness", "calibrate_v2.py")])
+    # Fit ONLY on the calibration episodes just recorded: same system, load mix and rate (lab, 17 and
+    # 22 Oct: fitting on every ep_cal_* on disk mixed load mixes and rates).
+    done = [os.path.join(arcenv.RAW, e["id"]) for e in eps if status_of(e["id"]) == "ok"]
+    log(f"calibration episodes done; fitting thresholds on these {len(done)} episodes only")
+    r = subprocess.run([sys.executable, arcenv.script("harness", "calibrate_v2.py")] + done)
     if r.returncode == 0:
         log("CALIBRATION DONE (re-label old episodes with: python3 harness/relabel.py)")
         subprocess.run(["bash", arcenv.script("loadgen", "stop-loadgen.sh")])
