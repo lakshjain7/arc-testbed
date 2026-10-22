@@ -210,6 +210,27 @@ restarting target often has no traffic, so it cannot show its own rise).
 **Use in the paper.** The blast radius figure: a timed tree per action type; the "chain follows calls"
 statistic against the no-op noise floor; the fast-fail vs slow-fail split.
 
+## 10c. Does ARC choose the right action? (Oct 22, `harness/action_rank.py`)
+
+**Why.** ARC's use is to score candidate actions for an incident, so the decisive test is ranking, not
+per-service error. Each episode shows only one action's outcome (the counterfactual problem), so we use
+pairs of test episodes with the same fault type and fault target (the same kind of incident) handled with
+different actions, and ask whether the predicted net effects (sum of signed y_mean over services) are
+ordered as observed. Pairs whose observed net effects differ by < 2 points are skipped.
+**Results (3 seeds).**
+| Test | Pairs | Action-mean baseline | ARC |
+|---|---|---|---|
+| batch 1 (in-system) | 361 | 75.3 % | **78.8 ± 1.3 %** |
+| unseen 25-service system | 3,419 | 76.5 % | **83.9 ± 0.3 %** |
+Scoring one candidate action: ~4-5 ms; all six: ~25-30 ms on a laptop CPU.
+**Interpretation, honestly.** The baseline that only knows each action type's average effect is already
+strong (75-77 %), because actions differ a lot on average (drain >> restart > ... > no-op). ARC's added
+value is +3.5 points in-system and +7.4 points on the unseen system, i.e. it uses the incident state to
+order actions the average gets wrong, and the gain is larger on the new system. The net-effect error is
+large in absolute terms (16 and 37 points summed over all services), so ARC is better at ORDERING actions
+than at stating their exact total damage. Next: report "hard pairs" (pairs where the two action types have
+similar averages), where the baseline is near chance and ARC's added value should be clearest.
+
 ## 11. Decisions on scope (with Laksh)
 
 - Paper option A: a research paper (ARC: dataset + harness + action-conditioned prediction + unseen-system
