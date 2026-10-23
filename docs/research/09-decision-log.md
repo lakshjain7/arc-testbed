@@ -297,3 +297,35 @@ fault doses tuned per machine and target (documented, not hidden); injected faul
 | Batch 2 (wide1, cal 021-040) | 524 folders, 500 usable | arc-data-wide1-2026-10-21.tar.gz, sha256 a8bc083e... |
 | Corrected labels for both | 1,243 labels | arc-labels-index-2026-10-21.tar.gz, sha256 d8f68c63... |
 | wide1db (db-delay) | 126 planned | on the lab machine, ends 22 Oct |
+
+### 10e. 5-fold cross-validation on batch 1 (2026-10-23)
+
+**Why.** The batch-1 numbers so far came from one test split (block % 5 == 0, 133 episodes) and only 10 hard
+pairs. Cross-validation tests every block once, so the numbers do not depend on one lucky split.
+**How.** `--fold k` in train_gnn.py, baselines.py, action_rank.py (fold k tests blocks with block % 5 == k).
+ARC = GNN without latency inputs, 2 seeds per fold for damage and 1 seed per fold for ranking. Every value in the
+table is the mean of the 5 folds.
+
+| Measure | ARC | B6 trees | B3 rule | B5 dependency map | B7 / B1 |
+|---|---|---|---|---|---|
+| Damage MAE (points) | **1.98** (1.81-2.19) | 4.43 | 3.86 | 6.73 | - |
+| Spearman | 0.68 | **0.75** | 0.61 | 0.41 | - |
+| Top-1 hit | **0.78** | 0.40 | 0.37 | 0.15 | - |
+| Yes/no F1 | **0.77** | - | - | 0.64 | B7 0.75 |
+| Pairs ordered right | **86.3 %** | - | - | - | B1 80.1 % |
+| Hard pairs (100 over 5 folds) | **68 %** | - | - | - | B1 51 % |
+| Gate at 20 points: catches / wrongly blocks | 83.8 % / **1.6 %** | - | - | - | rule 91.7 % / 21.2 % |
+
+- The fold-0 numbers match the earlier single-split ones, and all 5 folds agree. The single split was not lucky.
+- The trees still rank services better (Spearman 0.75 vs 0.68 in all 5 folds). This is a stable finding to report,
+  and the reason for combining ARC with B6 (item 5).
+- Ranking: ARC leads B1 by 0 to 11 points. The bootstrap lead is significant in 3 of 5 folds (1, 3, 4) and not in
+  folds 0 and 2. With 100 hard pairs, ARC gets 68 % against B1's 51 %. The 10-pair result was too small to judge;
+  this one is not.
+- Gate: ARC blocks about 13 times fewer safe actions (1.6 % vs 21.2 %) but misses more harmful ones (catching
+  83.8 % vs 91.7 %). This is a threshold choice; report the full curve.
+- Speed: scoring all six candidate actions takes 23-31 ms.
+
+**Train on main2 only** (308 instead of about 560 training episodes): batch-1 test MAE 2.13 (vs 1.84 with all
+plans), unseen system 2.86 (vs 3.01). Fewer episodes from one plan cost a little in-system and nothing unseen, so
+the result does not depend on mixing plans.

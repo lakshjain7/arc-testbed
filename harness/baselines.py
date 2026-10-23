@@ -113,6 +113,13 @@ def main(args):
     path = args[0]
     key = args[args.index("--target") + 1] if "--target" in args else "y_peak"
     eps = load(path)
+    if "--fold" in args:        # 5-fold cross-validation by block: fold k tests the blocks with block % 5 == k
+        k = int(args[args.index("--fold") + 1])
+        for e in eps:
+            e["split"] = "test" if e["block"] % 5 == k else "train"
+    if "--train-plans" in args:  # sensitivity: train only on some plans (e.g. main2), test split unchanged
+        keep = set(args[args.index("--train-plans") + 1].split(","))
+        eps = [e for e in eps if e["split"] == "test" or e["plan"] in keep]
     train = [e for e in eps if e["split"] == "train"]; test = [e for e in eps if e["split"] == "test"]
     if "--test" in args:        # unseen-system test: train on this file's train split, test on ALL of another
         test = load(args[args.index("--test") + 1])

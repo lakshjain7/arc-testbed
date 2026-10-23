@@ -74,6 +74,13 @@ def net_pred(model, ep, action=None):
 
 def main(args):
     eps = load(args[0]); seeds = int(args[args.index("--seeds") + 1]) if "--seeds" in args else 3
+    if "--fold" in args:        # 5-fold cross-validation by block
+        k = int(args[args.index("--fold") + 1])
+        for e in eps:
+            e["split"] = "test" if e["block"] % 5 == k else "train"
+    if "--train-plans" in args:
+        keep = set(args[args.index("--train-plans") + 1].split(","))
+        eps = [e for e in eps if e["split"] == "test" or e["plan"] in keep]
     train = [e for e in eps if e["split"] == "train"]
     test = load(args[args.index("--test") + 1]) if "--test" in args else [e for e in eps if e["split"] == "test"]
     act_mean = defaultdict(list)
