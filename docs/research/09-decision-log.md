@@ -329,3 +329,46 @@ table is the mean of the 5 folds.
 **Train on main2 only** (308 instead of about 560 training episodes): batch-1 test MAE 2.13 (vs 1.84 with all
 plans), unseen system 2.86 (vs 3.01). Fewer episodes from one plan cost a little in-system and nothing unseen, so
 the result does not depend on mixing plans.
+
+### 10f. "I'm not sure" signal, ARC + trees, best-case root cause (T13), LLM baseline (B8) (2026-10-23)
+
+harness/extras.py (5-seed ensemble, y_peak, latency off) and harness/llm_baseline.py.
+
+**"I'm not sure".** Disagreement = the spread of the 5 seeds' predictions. Novelty = the distance to the nearest
+training episodes.
+
+| Setting | Ensemble MAE | Disagreement vs error (Spearman) | Error of the 20 % most flagged / rest | Novelty above the 95th pct |
+|---|---|---|---|---|
+| Batch 1 | 1.78 | 0.53 | 3.73 / 1.31 | 5 % |
+| Unseen system | 2.80 | 0.74 | 7.19 / 1.95 | 22 % |
+| Unseen fault (db-delay) | 1.86 | 0.79 | 4.52 / 1.16 | 55 % |
+
+Disagreement is the useful signal: it is stronger the further the test is from training. Novelty is a weak
+predictor of error but a good alarm for "this is a new system or fault" (5 % → 22 % → 55 %).
+Intuition: seeds agree where the training data pinned the answer down and drift apart where it did not.
+
+**ARC + trees.** Per service, w·ARC + (1−w)·trees, with w chosen on validation.
+
+| Setting | ARC alone | Chosen blend |
+|---|---|---|
+| Batch 1 | MAE 1.78, Spearman 0.70 | w = 0.9: MAE 1.89, Spearman 0.74 |
+| Unseen system | MAE 2.80, Spearman 0.69 | w = 0.9: MAE 2.80, Spearman 0.73 |
+| Unseen fault | MAE 1.86, Spearman 0.71 | w = 0.6: MAE 2.09, Spearman 0.79 |
+
+The blend closes the ranking gap to the trees at little MAE cost, and ARC keeps its top-1 lead.
+
+**T13: ARC given the true faulty service.** No gain anywhere: MAE 1.78→1.75, 2.80→2.90, 1.86→1.92. On pod-hang
+in the unseen system it is worse (5.24→6.04). The state before the action already shows where the fault is.
+Pairing ARC with root-cause analysis adds explanation, not accuracy. The pod-hang weakness is a symptom-input
+problem, not a localisation problem.
+
+**B8 LLM (GPT-4o Mini, 3 solved examples of the same action type, JSON answer).**
+
+| Setting | B8 MAE / Spearman / top-1 | ARC MAE / Spearman / top-1 |
+|---|---|---|
+| Batch 1, 133 episodes | 6.39 / 0.44 / 30 % | 1.78 / 0.70 / 81 % |
+| Unseen system, 150 episodes | 6.69 / 0.28 / 23 % | 2.80 / 0.69 / 61 % |
+
+- B8 is worse than the B3 rule on every measure.
+- It takes 3.6 s per decision against ARC's 4 ms, and costs $0.001 per episode ($0.33 in total).
+- Caveat: a small, cheap model; a stronger one may do better, but it would be slower and cost more.
