@@ -74,6 +74,9 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_sca
     T = list(dict.fromkeys(targets)) if targets else TARGETS   # de-duplicated              # batch 2 adds services of the new flows as fault / action targets
     conds = [("none", None), ("pod-kill", None)] + [(f, l) for f in ("network-delay", "net-loss", "cpu-squeeze", "db-delay")
                                                     for l in levels.get(f, [])]         + ([("pod-hang", None)] if levels.get("pod-hang") else []) + (HARD if hard else [])
+    # held-out faults (decision log 10g): on/off ones, then ones with levels
+    conds += [(f, None) for f in ("http-error", "call-cut") if levels.get(f)]
+    conds += [(f, l) for f in ("shared-db-slow", "load-surge") for l in levels.get(f, [])]
     eps, block = [], 0
     while len(eps) < n_episodes:
         order = conds[:]
@@ -297,6 +300,10 @@ def main():
     pl.add_argument("--targets", type=lambda v: [x for x in v.split(",") if x], default=None,
                     help="fault / action targets (default: the six batch-1 services)")
     pl.add_argument("--hang", action="store_true", help="batch 2: include the pod-hang fault (one level)")
+    pl.add_argument("--http-error", action="store_true", help="held-out: the target answers HTTP 500")
+    pl.add_argument("--call-cut", action="store_true", help="held-out: cut the target's link to its busiest callee")
+    pl.add_argument("--shared-db-slow", type=num, default=[], help="held-out: every service's database replies delayed (ms), e.g. 5,15")
+    pl.add_argument("--surge", type=num, default=[], help="held-out: load multiplier of an extra load generator, e.g. 1.5,2")
     for nm in ("run", "status"):
         s = sub.add_parser(nm); s.add_argument("--name", default="main")
     a = p.parse_args()
@@ -309,7 +316,8 @@ def main():
         seed = a.seed if a.seed is not None else int(hashlib.md5(f"{a.name}/{arcenv.CLUSTER}".encode()).hexdigest()[:8], 16)
         plan = make_plan(a.name, a.episodes, seed, a.hard, a.delay_max,
                          {"network-delay": a.delay, "net-loss": a.loss, "cpu-squeeze": a.squeeze,
-                          "db-delay": a.db_delay, "pod-hang": a.hang}, a.target_scale, a.targets, a.db_scale)
+                          "db-delay": a.db_delay, "pod-hang": a.hang, "http-error": a.http_error, "call-cut": a.call_cut,
+                          "shared-db-slow": a.shared_db_slow, "load-surge": a.surge}, a.target_scale, a.targets, a.db_scale)
         json.dump(plan, open(plan_path(a.name), "w"), indent=1)
         eps = plan["episodes"]
         print(f"wrote {plan_path(a.name)}: {len(eps)} episodes in {eps[-1]['block']} blocks of 7, seed {seed}"

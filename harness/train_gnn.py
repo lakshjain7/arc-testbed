@@ -18,7 +18,7 @@ sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(_
 from baselines import roles, scored, spearman, MIN_N, load, fit
 
 FEATS = ["rps_ratio", "err_share", "p50_ratio", "p95_ratio", "p99_ratio", "cpu_use_frac", "throttled",
-         "mem_ratio", "not_ready", "bad_before", "is_action_target"]
+         "mem_ratio", "not_ready", "bad_before", "is_action_target", "in_fail", "out_fail"]
 RATIO = {"rps_ratio", "p50_ratio", "p95_ratio", "p99_ratio", "mem_ratio"}
 ROLES = ["target", "up1", "up2+", "down", "other", "no-target"]
 ACTIONS = ["noop", "restart-pod", "rollout-restart", "scale-up", "cpu-bump", "drain"]
@@ -26,7 +26,8 @@ ACTIONS = ["noop", "restart-pod", "rollout-restart", "scale-up", "cpu-bump", "dr
 
 DROP = set()          # feature groups switched off for the ablation (--drop)
 GROUPS = {"state": set(FEATS) - {"is_action_target"}, "bad_before": {"bad_before"}, "latency": {"p50_ratio", "p95_ratio", "p99_ratio"},
-          "role": set(), "action": set(), "graph": set()}
+          "role": set(), "action": set(), "graph": set(), "calls": {"in_fail", "out_fail"}}
+DROP.add("calls")     # call-failure inputs are off unless --calls is given (results before 10g were without them)
 
 
 def tensors(ep, key):
@@ -35,10 +36,19 @@ def tensors(ep, key):
     idx = {s: i for i, s in enumerate(names)}
     a = [1.0 if ep["action"]["type"] == x else 0.0 for x in ACTIONS]
     X, Y, M = [], [], []
+    # call-level symptoms: rps-weighted failed share of the calls INTO / OUT OF each service (a hung service
+    # looks healthy itself; the calls into it fail)
+    fin, fout = {}, {}
+    for e in ep["edges"]:
+        rps, fs = e.get("rps") or 0.0, e.get("failed_share") or 0.0
+        for dct, s in ((fin, e["dst"]), (fout, e["src"])):
+            acc = dct.setdefault(s, [0.0, 0.0]); acc[0] += rps * fs; acc[1] += rps
+    calls = {"in_fail": lambda s: fin[s][0] / fin[s][1] if s in fin and fin[s][1] else 0.0,
+             "out_fail": lambda s: fout[s][0] / fout[s][1] if s in fout and fout[s][1] else 0.0}
     for n in ep["nodes"]:
         v = []
         for k in FEATS:
-            x = n["x"].get(k)
+            x = calls[k](n["service"]) if k in calls else n["x"].get(k)
             if x is None:
                 x = 1.0 if k in RATIO else 0.0
             if k in RATIO:
@@ -101,6 +111,8 @@ def main(args):
     key = args[args.index("--target") + 1] if "--target" in args else "y_peak"
     seeds = int(args[args.index("--seeds") + 1]) if "--seeds" in args else 3
     epochs = int(args[args.index("--epochs") + 1]) if "--epochs" in args else 300
+    if "--calls" in args:
+        DROP.discard("calls")
     if "--drop" in args:
         DROP.update(args[args.index("--drop") + 1].split(","))
         print("ablation: inputs switched off:", sorted(DROP))

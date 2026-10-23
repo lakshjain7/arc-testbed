@@ -269,7 +269,7 @@ def reset_action(action, target, ep):
 def fault_on_new_pod(fault, chaos_name, target):
     """After a pod-replacing action: is the Chaos Mesh fault also on the NEW pod? (If not, the action
     silently 'cured' a network/stress fault.) None when not applicable."""
-    if fault in ("none", "pod-kill"):
+    if fault in ("none", "pod-kill", "load-surge", "shared-db-slow"):
         return None
     if fault == "cpu-squeeze":      # a replacement pod gets the Deployment's 2 cores: the squeeze is gone
         p = pod_of(target)
@@ -290,12 +290,21 @@ def fault_on_new_pod(fault, chaos_name, target):
 # processes run outside the target container on kind + cgroup v2 (target never throttled, whole host at
 # load 25, every service timing out). cpu-squeeze replaces it: the target's CPU limit is cut in place.
 FAULTS = ["none", "pod-kill", "network-delay", "net-loss", "cpu-squeeze", "blackhole", "cpu-stress",
-          "pod-hang", "db-delay"]
+          "pod-hang", "db-delay", "http-error", "call-cut", "shared-db-slow", "load-surge"]
 # Batch 2 faults whose meaning does not depend on machine speed:
 #   pod-hang  Chaos Mesh pod-failure: the target's container is swapped for a pause container. The pod
 #             is alive but answers nothing (a hung JVM), and it is NOT restarted by Kubernetes.
 #   db-delay  network delay only on the target's traffic TO MySQL (tsdb), level in ms. Other services
 #             reach the database normally; callers reach the target normally.
+# Held-out faults (never trained on; decision log 10g), chosen by the design weak point they hit:
+#   http-error      the target answers every request with HTTP 500 at once (Chaos Mesh HTTPChaos on its port)
+#   call-cut        ONE dependency link is cut: the target can no longer reach its busiest callee; both
+#                   services stay healthy. Level = the callee (picked from the live call graph if not given).
+#                   Applied on the callee side, like db-delay (Service addresses are translated after the
+#                   packet leaves the caller's pod): the callee's packets to the target are dropped.
+#   shared-db-slow  EVERY service's database replies are delayed (level in ms): many services at once, not
+#                   along calls. Replication between the MySQL copies is left alone.
+#   load-surge      nothing breaks: a second load generator adds (level - 1) x the running rate.
 DB_SELECTOR = {"namespaces": ["train-ticket"], "labelSelectors": {"app": "tsdb-mysql"}}   # all three copies (the leader moves)
 SQUEEZE_MIN_M = 10        # 10m is the smallest CPU quota Kubernetes enforces. Was 25m: on a fast machine the quiet
                           # services use 6-17m, so every level hit the floor and gave the same limit (lab, 2026-10-10)
@@ -312,11 +321,14 @@ def prom_scalar(q):
         return None
 CHAOS_KIND = {"pod-kill": "podchaos", "pod-hang": "podchaos", "db-delay": "networkchaos",
               "network-delay": "networkchaos", "net-loss": "networkchaos",
-              "blackhole": "networkchaos", "cpu-stress": "stresschaos"}
+              "blackhole": "networkchaos", "cpu-stress": "stresschaos",
+              "http-error": "httpchaos", "call-cut": "networkchaos", "shared-db-slow": "networkchaos"}
+SURGE_PROC = {}           # load-surge: the extra load generator, by chaos name
 # Default levels. The pilot's 300 ms delay, 1/4-CPU squeeze and blackhole SATURATED the system (users
 # >= 80% bad before the action in 39% of episodes), which hides the action's effect. Milder defaults;
 # the campaign draws from several levels per fault (harness/run_campaign.py).
-FAULT_DEFAULT_PARAM = {"network-delay": 50, "net-loss": 15, "cpu-squeeze": 2.5, "db-delay": 20}
+FAULT_DEFAULT_PARAM = {"network-delay": 50, "net-loss": 15, "cpu-squeeze": 2.5, "db-delay": 20,
+                       "shared-db-slow": 10, "load-surge": 2.0}
 
 
 def chaos_cr(fault, target, name, param):
@@ -351,6 +363,23 @@ def chaos_cr(fault, target, name, param):
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
                 "spec": {"action": "loss", "mode": "all", "selector": sel, "direction": "to",
                          "loss": {"loss": pct, "correlation": "0" if fault == "blackhole" else "25"},
+                         "duration": "30m"}}
+    if fault == "http-error":
+        return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "HTTPChaos", "metadata": md,
+                "spec": {"mode": "all", "selector": sel, "target": "Response", "port": int(param), "path": "*",
+                         "replace": {"code": 500}, "duration": "30m"}}
+    if fault == "call-cut":
+        return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
+                "spec": {"action": "partition", "mode": "all", "direction": "to",
+                         "selector": {"namespaces": ["train-ticket"], "labelSelectors": {"app": param}},
+                         "target": {"mode": "all", "selector": sel}, "duration": "30m"}}
+    if fault == "shared-db-slow":
+        ms = float(param or FAULT_DEFAULT_PARAM[fault])
+        return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
+                "spec": {"action": "delay", "mode": "all", "selector": DB_SELECTOR, "direction": "to",
+                         "target": {"mode": "all", "selector": {"namespaces": ["train-ticket"], "expressionSelectors": [
+                             {"key": "app", "operator": "NotIn", "values": ["tsdb-mysql"]}]}},
+                         "delay": {"latency": f"{ms:g}ms", "jitter": f"{ms / 4:g}ms", "correlation": "25"},
                          "duration": "30m"}}
     if fault == "cpu-stress":
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "StressChaos", "metadata": md,
@@ -414,6 +443,34 @@ def apply_fault(fault, target, name, param, used=None):
         ok, pod = set_cpu_limit(target, lim, request=lim if cpu_millis(lim) < 100 else None)
         return ok, {"kind": "in-place resize", "pod": pod, "cpu_limit": lim, "fraction": frac,
                     "cpu_used_before": round(used, 3)}
+    if fault == "load-surge":
+        mult = float(param or FAULT_DEFAULT_PARAM[fault])
+        base = (loadgen_status() or {}).get("rate_target") or 2.0
+        extra = round(base * (mult - 1), 2)
+        SURGE_PROC[name] = q = subprocess.Popen(
+            [sys.executable, arcenv.script("loadgen", "loadgen.py"), "--rate", str(extra), "--seed", str(random.randrange(1 << 30)),
+             "--print-every", "60"], stdout=open(os.path.join(arcenv.LOGS, f"{name}.surge.log"), "w"), stderr=subprocess.STDOUT)
+        time.sleep(10)
+        return q.poll() is None, {"kind": "extra load generator", "multiplier": mult, "base_rate": base, "extra_rate": extra,
+                                  "pid": q.pid, "system_wide": True}
+    if fault == "http-error":
+        svc = json.loads(sh(K + ["get", "svc", target, "-o", "json"], check=False) or "{}")
+        ports = (svc.get("spec") or {}).get("ports") or []
+        if not ports:
+            return False, {"error": f"no Service port for {target}"}
+        param = ports[0].get("targetPort") or ports[0]["port"]
+    if fault == "call-cut" and not param:
+        q = (f'topk(1, sum by (server) (rate(traces_service_graph_request_total{{client="{target}", server=~"ts-.*", '
+             f'server!="{target}"}}[5m])))')
+        try:
+            import urllib.parse, urllib.request
+            with urllib.request.urlopen(arcenv.PROM_URL + "/api/v1/query?" + urllib.parse.urlencode({"query": q}), timeout=20) as r:
+                res = json.load(r)["data"]["result"]
+            param = res[0]["metric"]["server"] if res else None
+        except Exception:
+            param = None
+        if not param:
+            return False, {"error": f"{target} calls no other service in the last 5 min"}
     before = pod_of(target)
     cr = chaos_cr(fault, target, name, param)
     p = subprocess.run(K + ["apply", "-f", "-"], input=json.dumps(cr), capture_output=True, text=True)
@@ -445,6 +502,15 @@ def remove_fault(fault, name, target=None):
     if fault == "cpu-squeeze":
         ok, _ = set_cpu_limit(target, "2", request="100m")   # a replaced pod already has these from its Deployment
         return ok
+    if fault == "load-surge":
+        q = SURGE_PROC.pop(name, None)
+        if q and q.poll() is None:
+            q.terminate()
+            try:
+                q.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                q.kill()
+        return True
     kind = CHAOS_KIND[fault]
     r = subprocess.run(K + ["delete", kind, name, "--wait=true", "--timeout=90s"], capture_output=True, text=True)
     if r.returncode and "NotFound" not in r.stderr:
