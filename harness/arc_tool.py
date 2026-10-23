@@ -25,6 +25,7 @@ import train_gnn as T
 import action_rank as A
 from baselines import load, roles
 
+T.DROP.discard("calls")   # call-failure inputs on (decision log 10g: helps hung pods, neutral elsewhere)
 BLOCK_PTS = 20.0
 W_TREE = 0.1
 FE = ["rps_ratio", "err_share", "cpu_use_frac", "throttled", "mem_ratio", "not_ready", "bad_before", "is_action_target"]

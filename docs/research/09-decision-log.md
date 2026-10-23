@@ -372,3 +372,51 @@ problem, not a localisation problem.
 - B8 is worse than the B3 rule on every measure.
 - It takes 3.6 s per decision against ARC's 4 ms, and costs $0.001 per episode ($0.33 in total).
 - Caveat: a small, cheap model; a stronger one may do better, but it would be slower and cost more.
+
+### 10g. Call-failure inputs, three-way gate, held-out faults (2026-10-23)
+
+**Call-failure inputs (`--calls`).** Two new inputs per service, taken from the call graph already in the dataset:
+the rps-weighted failed share of the calls INTO the service and of the calls it MAKES. Intuition: a hung pod looks
+healthy on its own (it is alive, not restarting, using no CPU); the symptom is on the calls into it.
+
+| Setting (3 seeds) | Without the new inputs | With them |
+|---|---|---|
+| Batch 1: MAE / Spearman / F1 | 1.83 / 0.68 / 0.74 | 1.83 / 0.69 / 0.76 |
+| Unseen system: MAE / Spearman | 2.90 / 0.65 | 2.86 / 0.65 |
+| Unseen system, pod-hang (last seed): MAE / top-1 | 8.23 / 0.28 | **6.51 / 0.37** |
+| Unseen fault: MAE | 1.94 | 1.95 |
+
+They help the weakest case (pod-hang) and are neutral elsewhere, so they are kept on in the ARC tool. pod-hang is
+still the worst fault: the inputs are only a 1-minute average before the action, so a richer time profile is
+still to do.
+
+**Three-way gate (harness/gate3.py).** BLOCK if the 5-seed mean predicted net effect is >= T; otherwise ASK a
+human if the seeds' spread is >= S; otherwise ALLOW. At T = 20:
+
+| Setting | Harmful caught, block only → block + ask | Safe wrongly blocked | Human asked |
+|---|---|---|---|
+| Batch 1 | 97.4 % → 97.4 % | 2.1 % | 10 % |
+| Unseen system | 88.3 % → 91.9 % | 6.6 % | 14 % |
+| Unseen fault | 89.7 % → 89.7 % | 2.1 % | 4 % |
+
+- The 5-seed mean alone makes a strong gate.
+- ASK adds little: the misses are confident ones, where all seeds agree it is safe and are all wrong.
+- Disagreement flags bad *damage* predictions (10f), but it is a weak extra gate layer. Report the gate as
+  block / allow, with ask as an option.
+
+**Held-out faults (commit 8a14ade, lab smoke test pending).** Four faults never trained on, chosen by the design
+weak point they hit:
+
+| Fault | What it does | Looks like a trained fault? |
+|---|---|---|
+| http-error (HTTPChaos 500) | The target fails fast | Yes, familiar-looking |
+| call-cut | One dependency link is lost (partition on the callee side) | Yes, familiar-looking |
+| shared-db-slow | Every service's database replies are delayed | No, new shape |
+| load-surge | An extra load generator adds traffic; nothing is broken | No, new shape |
+
+- Memory pressure was dropped: Chaos Mesh stress runs outside the container on kind + cgroup v2 (same as
+  cpu-stress).
+- Clock skew on auth was dropped: the load generator logs in only every 20 minutes, so it would not show within an
+  episode.
+- Plan: 168 episodes at the wide2 load (8 req/s, calibration-wide-8). ARC is trained without them, then tested
+  with no examples and with a few blocks added; it checks whether the "not sure" signal fires on the new shapes.
