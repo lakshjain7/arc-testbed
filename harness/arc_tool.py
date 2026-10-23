@@ -108,7 +108,7 @@ class ARC:
             g = torch.stack([m(X, s, d) for m in self.dmg]).mean(0).numpy()
         dmg = (1 - W_TREE) * g + W_TREE * self.trees.predict(tree_feats(ep)) if self.trees is not None else g
         net, spread = self._net(ep)
-        cands = {a: self._net(dict(ep, action=dict(ep["action"], type=a)))[0] for a in T.ACTIONS}
+        cands = {a: self._net(self._as_action(ep, a))[0] for a in T.ACTIONS}
         decision = "block" if net >= BLOCK_PTS else ("ask" if spread >= self.cfg["ask_spread_pts"] else "allow")
         r = roles(ep)
         svc = sorted(({"service": n["service"], "role": r[n["service"]], "damage_pts": round(100 * float(v), 1)}
@@ -117,6 +117,15 @@ class ARC:
                 "services": svc, "chain": self._chain(ep, [x["service"] for x in svc if x["damage_pts"] >= 5][:4]),
                 "safest_action": min(cands, key=cands.get), "candidates": {a: round(v, 1) for a, v in cands.items()},
                 "ms": round(1000 * (time.perf_counter() - t0), 1)}
+
+    @staticmethod
+    def _as_action(ep, a):
+        """The same state with another action type. A noop has no target (as in the training data), so the
+        target's is_action_target flag is cleared too; otherwise the noop is scored as an unknown situation."""
+        if a != "noop":
+            return dict(ep, action=dict(ep["action"], type=a))
+        return dict(ep, action={"type": "noop", "target": None},
+                    nodes=[dict(n, x=dict(n["x"], is_action_target=0.0)) for n in ep["nodes"]])
 
     @staticmethod
     def _chain(ep, hit):
