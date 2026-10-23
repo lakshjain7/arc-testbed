@@ -14,7 +14,7 @@ for c in $CASES; do
   say "== $f ${l:+level $l} on $T ($id)"
   python3 "$ARC_ROOT/harness/run_episode.py" --id "$id" --fault "$f" ${l:+--fault-param "$l"} --fault-target "$T" \
       --action noop --target "$T" --delay 120 --seed 1 > "$ARC_DATA/logs/$id.smoke.log" 2>&1
-  python3 - "$ARC_DATA/arc/raw/$id" <<'EOF'
+  python3 - "$ARC_DATA/raw/$id" <<'EOF'
 import json, os, sys
 d = sys.argv[1]
 if not os.path.exists(os.path.join(d, "meta.json")):
