@@ -7,7 +7,7 @@ showed latency 30x worse while errors fell from 100% to 14%).
 
   X, N          bad and total requests in a window. For a service with no server spans in a 5 s step
                 (e.g. just killed), callers' failed calls into it count as its requests, both N and X.
-  B1L           label baseline = the 60 s before the action (the model's input stays the 30 s B1)
+  B1L           label baseline = the 60 s before the action (the model's input features use the same 60 s: build_dataset.py PRE_S; the exported "B1" window is 30 s)
   G             grace between the action and M;  M is split into 30 s blocks
   p_hat = X/N,  p_tilde = (X + 0.5) / (N + 1)   (smoothed, so tiny counts don't give 0% or 100%)
 
