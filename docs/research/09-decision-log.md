@@ -459,3 +459,29 @@ is in commit 092dc5c, plus d523d64 (the drift warning also fires when the B0 med
 calibration-wide-8 was fitted on a drifted database (cancel 76 ms against about 20 ms clean) and is to be refitted before held.
 wide2: relative labels of the second half are inflated for cancel and its path; use the fixed-bar labels on all of it, and the
 relative labels on the first half only. wide1 was affected little (cancel 25 -> 56 ms, below the 100 ms floor of the threshold).
+
+### 10i. Repeatability test relabelled with the clean calibration (2026-10-25)
+
+calibration-wide-8c (fitted on the clean database, 20 episodes ep_cal_arc_061-080, z 1.6, held-out false harm 0/176).
+Compared with the drifted calibration-wide-8, 10 of 65 operation thresholds differ (booking: gateway / preserve / assurance
+100 -> 250 ms, client book / book2 100 -> 174 / 177 ms; cancel: 250 -> 100 ms). Of the 65 thresholds in 8c, 58 are at 100 ms,
+the floor of max(100 ms, q99): the "machine-relative" bar is mostly the floor in practice. Thresholds are histogram bucket
+boundaries (10, 25, 50, 100, 250 ms), so a q99 near a boundary flips the threshold.
+
+| Reptest, relabelled | Old labels (drifted calibration) | Clean calibration |
+|---|---|---|
+| Noise ceiling y_peak / y_mean (points) | 3.77 / 2.01 | 3.08 / 1.49 |
+| R1 (no fault, noop) net effect spread (sd) | 21.4 | 6.0 |
+| R2 net effect mean (CV) | 218 (28 %) | 283 (27 %) |
+| R3 net effect mean (CV) | 47 (32 %) | 74 (12 %) |
+| R4 net effect mean (CV) | 91 (25 %) | 94 (23 %) |
+
+- The drifted calibration added noise (the noop recipe spread fell from 21 to 6 points).
+- Net effect for real actions moved by 3-60 % with a different calibration: labels are sensitive to the threshold choice.
+  A label-sensitivity analysis (relabel under several calibrations and the fixed bars; do the model comparisons and the
+  action rankings stay the same?) is to be done and reported.
+
+**ARC against the clean-label noise ceiling** (trained on wide1 with its own labels, tested on the 20 repeat episodes
+labelled with 8c; y_peak MAE, 5 seeds): ARC 5.19 (+-0.87), noise ceiling 3.08, rule B3 9.44, trees B6 10.32, action mean 14.60.
+ARC is about 2.1 points above the ceiling; the trees 7.2; the action mean 11.5. Note that 7 operation thresholds differ between the labels ARC
+was trained on and the test labels (booking 100 -> 250 / 174 ms), and ARC's error did not degrade (5.41 -> 5.19).
