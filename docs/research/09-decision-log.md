@@ -420,3 +420,42 @@ weak point they hit:
   episode.
 - Plan: 168 episodes at the wide2 load (8 req/s, calibration-wide-8). ARC is trained without them, then tested
   with no examples and with a few blocks added; it checks whether the "not sure" signal fires on the new shapes.
+
+### 10h. Repeatability test, noise ceiling, and ARC against it (2026-10-25)
+
+Data: reptest (20 episodes = 4 recipes x 5 runs, 8 req/s, clean database after the reset fix; archive sha256
+3dfdcf7d..., verified). harness/noise_ceiling.py.
+
+**Repeat spread of the net effect** (sum of y_mean over scored services, points):
+
+| Recipe | Runs | Mean | CV |
+|---|---|---|---|
+| R2 delay on seat + restart seat | 260, 241, 110, 254, 225 | 218 | 28 % |
+| R3 loss on travel + drain travel | 35, 33, 44, 70, 53 | 47 | 32 % |
+| R4 no fault + rollout-restart order | 116, 115, 74, 72, 78 | 91 | 25 % |
+| R1 no fault + noop | -9, 4, 2, 39, -16 | 4 | not meaningful |
+
+**Noise ceiling** (leave-one-out: predict a run by the mean of the other four, per service): y_peak 3.77 points,
+y_mean 2.01 points (365 service-replicates). The estimate is slightly high (the mean of four runs is itself noisy;
+about 10 %), so the true floor is probably about 3.4 for y_peak.
+
+**ARC on the same 20 episodes (y_peak MAE, 5 seeds):** ARC trained on wide1 5.41 (+-0.77), trained on batch 1 5.51.
+Baselines: trees 9.3 / 9.0, rule B3 9.0 / 8.7, action mean 13.6 / 15.9.
+ARC is about 1.7 points above the noise ceiling, the trees about 5.5 points above it, the action mean about 10 above it.
+This set (high-damage actions) is much harder than the usual test split (ARC 1.8-2.9), so the numbers are not comparable
+across sets, only against the ceiling of the same set.
+
+**Findings.**
+- y_peak is unreliable for sparse services: in R4 inside-payment's y_peak has a spread of 53 points between identical
+  runs. A maximum over six noisy 30 s blocks is dominated by chance when traffic is low (winner's curse).
+  Net effect and y_mean are the reliable targets; y_peak needs a minimum-traffic rule when it is reported.
+- R4 (rollout-restart on order) splits into two groups (116, 115 vs 74, 72, 78): something that varies between runs
+  moves the outcome by about 40 points. Unexplained; to investigate in the raw episodes (pod placement, timing of the
+  restart against the load generator's order cycle).
+- A real action repeats to within 25-32 %: no predictor can be more accurate than that on a single incident.
+
+Also logged (lab, 24-25 Oct): cancel-flow drift in wide2 (F21): reset-data.sh did not clean assurance and inside_money; the fix
+is in commit 092dc5c, plus d523d64 (the drift warning also fires when the B0 median is far BELOW the calibration median).
+calibration-wide-8 was fitted on a drifted database (cancel 76 ms against about 20 ms clean) and is to be refitted before held.
+wide2: relative labels of the second half are inflated for cancel and its path; use the fixed-bar labels on all of it, and the
+relative labels on the first half only. wide1 was affected little (cancel 25 -> 56 ms, below the 100 ms floor of the threshold).
