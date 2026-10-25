@@ -485,3 +485,38 @@ boundaries (10, 25, 50, 100, 250 ms), so a q99 near a boundary flips the thresho
 labelled with 8c; y_peak MAE, 5 seeds): ARC 5.19 (+-0.87), noise ceiling 3.08, rule B3 9.44, trees B6 10.32, action mean 14.60.
 ARC is about 2.1 points above the ceiling; the trees 7.2; the action mean 11.5. Note that 7 operation thresholds differ between the labels ARC
 was trained on and the test labels (booking 100 -> 250 / 174 ms), and ARC's error did not degrade (5.41 -> 5.19).
+
+### 10j. Label-sensitivity sweep: do the conclusions depend on the latency bar? (2026-10-25)
+
+Method: every episode of batch 1 (701) and wide1 (500) relabelled with a request counted bad if it failed or took longer than a
+FIXED bar of 50, 100, 250, 500 or 1000 ms (same windows, blocks and smoothing as labels_v2.py; input `bad_before` recomputed
+under the same bar; harness/label_sweep.py, label_sweep_build.py). Check: the 100 ms bar reproduces the real labels of batch 1 and
+wide1 (correlation 1.00, same mean) because the calibrated per-operation bars were at the 100 ms floor there. Correlation of
+y_mean with the real labels: 0.80 (50 ms), 0.97 (250), 0.96 (500), 0.95 (1000). Single split (block % 5), 3 seeds, y_peak, latency inputs off, call-failure inputs on.
+
+In-system (batch 1 test, 133 episodes): MAE in points, Spearman, top-1 hit.
+
+| Bar | ARC | Trees B6 | Rule B3 | Action mean B1 | Zero B0 | ARC / zero |
+|---|---|---|---|---|---|---|
+| 50 | 1.44 / .710 / .73 | 3.10 / .726 / .48 | 3.07 / .493 / .42 | 6.52 | 4.63 | 0.31 |
+| 100 (= real) | 1.83 / .690 / .77 | 3.96 / .742 / .39 | 3.82 / .616 / .35 | 9.03 | 6.39 | 0.29 |
+| 250 | 1.66 / .681 / .83 | 4.11 / .794 / .39 | 3.64 / .063 / .27 | 9.38 | 6.54 | 0.25 |
+| 500 | 1.46 / .690 / .79 | 4.36 / .806 / .27 | 3.39 / .114 / .35 | 9.51 | 6.57 | 0.22 |
+| 1000 | 1.36 / .705 / .75 | 4.18 / .767 / .35 | 3.25 / .209 / .42 | 9.51 | 6.47 | 0.21 |
+
+Unseen system (train batch 1, test wide1, 500 episodes): ARC MAE 2.57 / 2.86 / 2.58 / 2.49 / 2.52 against trees 3.36 / 3.91 / 3.92 / 4.26 / 3.95,
+rule 3.66 / 4.17 / 3.94 / 3.88 / 3.85, action mean 6.62 / 8.72 / 8.81 / 8.94 / 8.93 (bars 50 .. 1000). ARC / zero 0.56 / 0.50 / 0.47 / 0.46 / 0.47.
+Yes/no 'harmed' F1 in-system, ARC against the prior-work classifier B7: 0.72 / 0.68, 0.76 / 0.73, 0.79 / 0.75, 0.85 / 0.81, 0.88 / 0.84.
+Action ranking (pairs ordered right, ARC against action mean): 77.4 / 75.5, 78.8 / 75.3, 85.2 / 78.1, 86.5 / 83.2, 94.0 / 87.7.
+Gate at 20 points: ARC catches 92-100 % of harmful and wrongly blocks 2-6 % of safe; the action-mean rule catches 97-100 % and wrongly blocks 19-22 %, at every bar.
+
+**Robust across bars:** (1) ARC has the lowest error at every bar, 2-3x below the trees and the rule in-system and 1.3-1.5x on the unseen system;
+as a fraction of the zero predictor's error it removes 69-79 % (in-system) and 44-54 % (unseen). (2) ARC's top-1 hit is the highest everywhere except tied at
+bar 50 on the unseen system (0.48 against 0.38). (3) ARC's yes/no F1 is above the prior-work classifier at every bar. (4) The gate's false-block rate stays at 2-6 %.
+(5) The trees rank services better (Spearman .73-.81 against .61-.71) at every bar: a stable weakness, addressed by the 90/10 blend.
+**Not robust:** (6) The lead in action ranking is small and varies with the bar (+1.9 to +7.1 points on one split, no interval). (7) Hard pairs (training means within
+5 points) number only 10-34 on one split, and at bar 250 ARC is below the action-mean rule (32-41 % against 82 %): the claim "ARC wins hard pairs" is not established across bars
+(5-fold results per bar are being computed). (8) The rule B3's Spearman collapses at coarse bars (0.06-0.21): its fitted line on `bad_before` carries little at those bars.
+(9) Absolute errors are not comparable across bars (the zero predictor's MAE changes from 4.6 to 6.6); compare ratios.
+At 1000 ms the remaining damage is mostly outright failures (8.5 % of scored services still show >= 10 points against 10.2 % with the real labels), so the 1000 ms bar
+tests failure prediction, not slowdown prediction.
