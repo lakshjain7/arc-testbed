@@ -93,6 +93,7 @@ def health():
 
 
 DRIFT_WARN_RATIO = 1.15   # warn when a user flow's B0 median is more than 15 % above its calibration median
+DRIFT_STALE_RATIO = 0.7   # ... or more than 30 % below it (calibration fitted while the database had drifted, F21)
 
 
 def calib_flow_medians():
@@ -135,6 +136,9 @@ def baseline_drift_check(b0):
                 if m / cal[op] > DRIFT_WARN_RATIO:
                     log(f"WARNING baseline drift: {op} B0 median {m:.0f} ms is {100 * (m / cal[op] - 1):.0f} % above "
                         f"its calibration median {cal[op]:.0f} ms")
+                elif m / cal[op] < DRIFT_STALE_RATIO:       # the other direction: thresholds fitted on a drifted baseline
+                    log(f"WARNING stale calibration: {op} B0 median {m:.0f} ms is {100 * (1 - m / cal[op]):.0f} % below "
+                        f"its calibration median {cal[op]:.0f} ms, so its bad-request threshold is too lenient")
         return out
     except Exception as e:                       # a warning must never break an episode
         log(f"baseline drift check skipped: {e}")
