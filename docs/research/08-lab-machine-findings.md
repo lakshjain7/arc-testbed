@@ -346,6 +346,63 @@ Same on both: kind v0.30.0, Kubernetes v1.34.0, 20-service core profile, 6 targe
   Raw data is intact, so both are fixable by relabelling with the right calibration.
 - **Lesson.** A calibration must be fitted only on episodes of the same system and load mix.
 
+### F19. wide1 finished at 500 of 504: Prometheus was killed for memory 35 times (2026-10-21)
+
+- **Numbers (VERIFIED).** CAMPAIGN DONE 21 Oct 05:47 UTC. 500 ok, 1 discarded ("no span metrics in
+  the export", b070_2), 3 never recorded after two attempts each (b066_7, b070_1, b070_4; "export
+  FAILED", `TimeoutError`). Many other episodes needed a second attempt; the last day ran at about
+  2.6 episodes/h instead of 6. Prometheus (limit 1000Mi): 35 restarts, last termination OOMKilled
+  (exit 137) at 05:35 UTC; resident memory 862 MB at rest; head series 94k-114k over the last 24 h
+  with 25 services.
+- **Cause (INFERRED from the above).** Each time Prometheus is killed, the metrics of the episode in
+  progress are lost or not yet queryable, so its export times out or lacks span metrics.
+- **Impact.** 4 of 504 episodes lost, about 10 h of machine time spent on retries. The three
+  unrecorded folders exist but have no meta.json: use `index/episodes.csv`, not the folder list.
+- **Fix to decide before any further run.** Raise Prometheus' memory limit (e.g. 2Gi; 7.5 GB is free).
+- **Also done.** Wide-only calibration (ep_cal_arc_021-040: z 1.6, held-out false harm 0/110) in
+  `calibration-wide`; wide1 and those 20 relabelled with it (521). Batch 1 relabelled with
+  `calibration-batch1` (721); spot checks match the 17 Oct archive exactly. The default
+  `calibration/` still holds the blended 17 Oct fit: any new run must use `calibration-wide`.
+
+### F20. Reply-side db-delay works, but is a switch, not a dial (2026-10-21)
+
+- **Numbers (VERIFIED, wide mix, 4 req/s, WORST FLOW).** order 2 ms 97 %, 4 ms 100 %, 6 ms 100 %,
+  10/30/60 ms 100 % | seat 10/30/60 ms 0 % | travel 2 ms 0 %, 5 ms 3 %, 10 ms 42 % |
+  station 5 ms 8 %, 15 ms 100 %, 30 ms 100 % | travel2 10 ms 8 %, 15/20/30/60 ms 100 %.
+  Test episode (30 ms on order, no-op): order p50 5 -> 62.5 ms, travel 24 -> 189 ms, station
+  5.0 -> 5.0 ms (label: no harm), users saturated by the fixed 1 s bar too.
+- **Interpretation.** The fix is selective, as intended: the untargeted database user is untouched.
+  One request makes many database calls, so a few ms per query multiply; the worst flow jumps from
+  under 10 % to about 100 % within a few ms on every target except travel. Order saturates at the
+  smallest level tested. `--target-scale` does not apply to db-delay, so one level would serve all
+  targets, and no single level is usable on all four.
+
+### F21. wide2: the cancel flow drifted slower all run long, and the saturation flag followed it
+
+- **Numbers (VERIFIED).** Cancel median (load generator, per 4 h): 77 ms (22 Oct 12:00 UTC), 89, 98,
+  106, 118, 128, 131 ms (24 Oct 12:00); p90 92 -> 150-156 ms. Other flows flat (search 31-36 ms,
+  book 68-79 ms, orders 12-15 ms). Its calibrated threshold is 111 ms, so from about 23 Oct 20:00 the
+  worst flow before the action was "cancel" at 80-100 % in almost every episode: 123 of 290 saturated,
+  including 16 of 42 no-fault episodes (0 of 21 a day earlier). users_bad_before_abs1000 stayed 0 in
+  those episodes: under the fixed 1 s bar they are not saturated.
+- **Cause (tables VERIFIED, link INFERRED).** `ops/reset-data.sh` cleans orders, orders_other, payment
+  and inside_payment, but not `assurance` (167,787 rows; 30 % of bookings buy insurance) or
+  `inside_money` (60,355 rows; every cancel writes a refund). Cancel reads them.
+- **Impact.** The relative labels of the second half of wide2 are inflated for the cancel flow and the
+  services on its path; the raw data is intact and the fixed-bar labels are unaffected.
+- **Lesson.** Every table the load writes must be in the reset, or the baseline drifts (F9 again,
+  through a table added with batch 2).
+- **Follow-up (2026-10-24, VERIFIED).** The drift began with batch 2, not with wide2. Cancel median in
+  B0 per fifth of each run: wide1 25, 34, 42, 49, 56 ms; wide1db 64, 65, 66, 68, 72 ms; wide2 83, 94, 105,
+  118, 130 ms. No no-fault episode of wide1 or wide1db was saturated (the threshold was not yet
+  crossed). calibration-wide-8 was fitted on 22 Oct, already drifted: its cancel median is 75.9 ms.
+  Fix in ops/reset-data.sh: delete assurance rows whose order is gone, and the load account's
+  inside_money refund rows ('D'; the one 'A' row is kept). 15-min check at 8 req/s: 0 failed requests
+  before and after; cancel median 140 -> 20 ms (p90 162 -> 23); book 76 -> 64 ms, orders 20 -> 13 ms;
+  assurance 170,393 -> 185 rows (545 after 15 min), inside_money 61,233 -> 1 (73 after 15 min).
+  A health-gate warning now logs any flow whose B0 median is > 15 % above its calibration median
+  (meta["baseline_drift"]); it never aborts.
+
 ---
 
 ## 3. How to deal with machine dependence (design notes)
