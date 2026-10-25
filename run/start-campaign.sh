@@ -9,11 +9,14 @@
 #   run/start-campaign.sh stop                   stop cleanly (undoes the fault/action in progress)
 #
 # Second cluster:   ARC_CLUSTER=arc2 ARC_INDEX=1 run/start-campaign.sh campaign
-# Settings (environment): ARC_RATE=2 load in requests/s | ARC_SYNC=1 copy data to $ARC_BACKUP every 25 episodes
+# Settings (environment): ARC_RATE=2 load in requests/s | ARC_MIX=core|wide load mix | ARC_CALIB=<calibration folder> | ARC_SYNC=1 copy data to $ARC_BACKUP every 25 episodes
 . "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
 MODE="${1:-}"; SESSION="arc-$ARC_CLUSTER"; LOG="$ARC_DATA/logs/campaign.log"
 command -v tmux >/dev/null || { echo "tmux is missing: sudo apt-get install -y tmux"; exit 1; }
-ENVS="ARC_CLUSTER=$ARC_CLUSTER ARC_INDEX=$ARC_INDEX ARC_DATA_ROOT=$ARC_DATA_ROOT ARC_RATE=${ARC_RATE:-2} ARC_SYNC=${ARC_SYNC:-0} ARC_BACKUP=${ARC_BACKUP:-}"
+ENVS="ARC_CLUSTER=$ARC_CLUSTER ARC_INDEX=$ARC_INDEX ARC_DATA_ROOT=$ARC_DATA_ROOT ARC_RATE=${ARC_RATE:-2} ARC_SYNC=${ARC_SYNC:-0} ARC_BACKUP=${ARC_BACKUP:-} ARC_CALIB=$ARC_CALIB ARC_MIX=${ARC_MIX:-core}"
+# ARC_CALIB (which thresholds label the run) and ARC_MIX (which load mix: core | wide) must reach the run itself: a fresh
+# tmux server does not inherit this shell's environment, and a run without them used the default calibration and the core mix
+# (lab, 25 Oct: caught before any episode was recorded).
 
 start() {   # $1 = command line to run inside tmux
   if tmux has-session -t "$SESSION" 2>/dev/null; then
