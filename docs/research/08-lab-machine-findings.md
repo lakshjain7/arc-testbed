@@ -403,6 +403,61 @@ Same on both: kind v0.30.0, Kubernetes v1.34.0, 20-service core profile, 6 targe
   A health-gate warning now logs any flow whose B0 median is > 15 % above its calibration median
   (meta["baseline_drift"]); it never aborts.
 
+### F22. The calibration itself can be drifted; refit on the clean database (2026-10-25)
+
+- **What happened.** calibration-wide-8 was fitted on 22 Oct 10:38-13:04 UTC, five days into the
+  cancel drift of F21. Its cancel median is 75.9 ms and its cancel threshold 111 ms; on the cleaned
+  database cancel runs at about 20 ms (B0 ratio 0.26 in the live check of the new drift warning).
+- **Impact.** Labels made with it are less sensitive for the cancel flow (a slowdown from 20 to 100 ms
+  stays below the 111 ms bar). Everything else in it matched the clean run within 11 %
+  (search 0.89, search2 1.06, book 0.98, book2 1.01, pay 1.01, orders 0.99, orders2 1.01, collect 0.98).
+- **Response.** The drift warning also fires when a flow's B0 median is more than 30 % BELOW its
+  calibration median ("stale calibration", laptop commit d523d64). A new 8 req/s calibration,
+  calibration-wide-8c, is fitted on the clean database only on the 20 episodes it records, before held.
+- **Lesson.** A calibration is a measurement of the system at one moment; if the system's state drifted
+  before it was taken, it inherits the drift. Check the baseline before calibrating, not only after.
+
+### F23. Compacting Docker's disk image (2026-10-25)
+
+- **Numbers (VERIFIED).** Docker's disk image had grown to 118.3 GB while holding about 73 GB; C: was
+  down to 8.8 GB free and falling about 1 GB/h with the cluster idle (Prometheus and MySQL keep
+  writing; the image never returns freed space). Steps: `docker run --privileged --pid=host
+  docker/desktop-reclaim-space` (trim), `docker desktop stop`, `wsl --shutdown`, then as administrator
+  `diskpart`: select vdisk / attach vdisk readonly / compact vdisk / detach vdisk. Result: 118.3 ->
+  73.9 GB; C: free 8.8 -> 52.8 GB. Restart: kind nodes up in 10 s with the open-files cap intact;
+  recover-after-restart.sh 25 services ready in 18 min; MySQL leader moved to tsdb-mysql-1; warm-up
+  100 % ok. About 45 min offline in all.
+- **Lesson.** On a machine with one disk, plan a compaction between long runs; Windows shadow copies
+  (up to 19 GB, F12/F19) and the Docker image are the two silent consumers.
+
+### F24. Repeatability: the same episode, five times (2026-10-24)
+
+- **Design.** 4 fixed recipes x 5 runs, interleaved, wide mix, 8 req/s, calibration-wide-8, reset fix
+  applied. 20 of 20 ok (one export retried), none saturated.
+- **Numbers (VERIFIED).** User damage, min-max: R1 no fault / no-op 0.00-0.38 (four runs ~0);
+  R2 delay 4 ms seat / restart-pod seat 0.86-3.42; R3 loss 15 % travel / drain travel 0.82-1.06;
+  R4 no fault / rollout-restart order 2.45-3.74. Callers' y_peak, min-max: R3 gateway 0.29-0.35,
+  preserve 0.44-0.67; R2 travel 0.64-0.72, preserve 0.20-0.80, travel2 0.58-0.98; R4 gateway
+  0.44-0.65, preserve 0.44-0.84, low-traffic callers (cancel, inside-payment) 0.0-0.98.
+- **Interpretation.** The no-op baseline is near zero and the drain recipe repeats tightly; restart
+  recipes repeat in size order but spread 2-4x, most for low-traffic services. Labels of rare flows are
+  the noisiest part of the dataset.
+
+### F25. Smoke test of the held-out faults: 2 of 6 pass (2026-10-25)
+
+- **Setup.** Repo 01b8dbd, wide mix 8 req/s, clean database, calibration-wide-8c (fitted on
+  ep_cal_arc_061-080 only: z 1.6, held-out false harm 0/176). One no-op episode per case on seat.
+- **Numbers (VERIFIED).** http-error: HTTPChaos "not AllInjected within 30 s" (Selected True,
+  AllInjected False), episode discarded, teardown stuck (finalizer forced); it left a PodHttpChaos on the
+  seat pod with a "replace response code 500" rule (status empty, not active: 128/128 then 477/477
+  requests ok); removed by hand. call-cut (seat -> config): verified, worst flow book 100 %, travel,
+  travel2, preserve, preserve-other 100 % bad: saturated. shared-db-slow 5 ms and 15 ms: verified,
+  worst flow 100 %, saturated. load-surge 1.5x: worst flow 9 %; 2x: 18 %; both clean and healthy.
+  All teardowns except http-error clean; healthy after in 4-5 s; drift ratios 0.87-1.22.
+- **Interpretation.** Cutting one call or slowing the shared database by 5 ms breaks every booking:
+  these are switches at this load, like db-delay (F20). HTTP fault injection does not attach on this
+  stack (sidecar-less HTTPChaos needs the target's traffic to pass its proxy port).
+
 ---
 
 ## 3. How to deal with machine dependence (design notes)
