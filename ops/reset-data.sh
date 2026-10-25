@@ -16,7 +16,13 @@ before=$(SQL "select (select count(*) from orders) + (select count(*) from order
 out=$(SQL "delete from orders where account_id='$ACC' and bought_date < now() - interval $KEEP minute;
            delete from orders_other where account_id='$ACC' and bought_date < now() - interval $KEEP minute;
            delete p from payment p left join orders o on o.id = p.order_id left join orders_other x on x.id = p.order_id where o.id is null and x.id is null;
-           delete i from inside_payment i left join orders o on o.id = i.order_id left join orders_other x on x.id = i.order_id where o.id is null and x.id is null;")
+           delete i from inside_payment i left join orders o on o.id = i.order_id left join orders_other x on x.id = i.order_id where o.id is null and x.id is null;
+           delete a from assurance a left join orders o on o.id = a.order_id left join orders_other x on x.id = a.order_id where o.id is null and x.id is null;
+           delete from inside_money where user_id='$ACC' and type='D';")
+# assurance (insurance bought with a booking, linked by order_id) and inside_money (refund rows 'D' written by
+# every cancel; no order link, no timestamp) were never cleaned: in wide2 they reached 170k and 61k rows and the
+# cancel flow slowed from 77 to 131 ms over two days (findings F21). The load account's single 'A' row in
+# inside_money is not a refund and is kept.
 [ -n "$out" ] && echo "reset-data: MySQL said: $out"
 after=$(SQL "select (select count(*) from orders) + (select count(*) from orders_other)")
 # MySQL writes every query to an audit log with no size limit (lab machine: 9.2 GB in 49 h at 4 req/s,

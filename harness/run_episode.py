@@ -92,6 +92,55 @@ def health():
     return True, "ok"
 
 
+DRIFT_WARN_RATIO = 1.15   # warn when a user flow's B0 median is more than 15 % above its calibration median
+
+
+def calib_flow_medians():
+    """Median latency of each user flow in the B0 windows of the calibration episodes behind the calibration in
+    use (ARC_CALIB). Computed once and cached next to it as flow_medians.json."""
+    import csv, gzip
+    path = os.path.join(arcenv.CALIB, "flow_medians.json")
+    if os.path.exists(path):
+        return json.load(open(path))
+    cal = json.load(open(os.path.join(arcenv.CALIB, "calibration_v2.json")))
+    by = {}
+    for ep in cal["train"] + cal["holdout"]:
+        with gzip.open(os.path.join(arcenv.RAW, ep, "client.csv.gz"), "rt") as f:
+            for r in csv.DictReader(f):
+                if r["window"] == "B0" and r["ok"] == "1":
+                    by.setdefault(r["op"], []).append(float(r["ms"]))
+    med = {op: round(sorted(v)[len(v) // 2], 1) for op, v in by.items() if len(v) >= 20}
+    json.dump(med, open(path, "w"), indent=1)
+    return med
+
+
+def baseline_drift_check(b0):
+    """Health-gate warning (never aborts): a user flow whose median in this episode's B0 is more than 15 % above
+    its calibration median means the healthy baseline has drifted (lab findings F9, F21: tables the reset did not
+    clean). Logged and recorded in meta["baseline_drift"]."""
+    try:
+        cal = calib_flow_medians()
+        st = loadgen_status() or {}
+        by = {}
+        with open(os.path.join(st["run_dir"], "requests.jsonl")) as f:
+            for line in f:
+                r = json.loads(line)
+                if b0[0] <= r.get("t", 0) < b0[1] and r.get("ok"):
+                    by.setdefault(r["op"], []).append(r["ms"])
+        out = {}
+        for op, v in sorted(by.items()):
+            if op in cal and len(v) >= 5 and cal[op] > 0:
+                m = sorted(v)[len(v) // 2]
+                out[op] = {"b0_median_ms": round(m, 1), "calibration_median_ms": cal[op], "ratio": round(m / cal[op], 2)}
+                if m / cal[op] > DRIFT_WARN_RATIO:
+                    log(f"WARNING baseline drift: {op} B0 median {m:.0f} ms is {100 * (m / cal[op] - 1):.0f} % above "
+                        f"its calibration median {cal[op]:.0f} ms")
+        return out
+    except Exception as e:                       # a warning must never break an episode
+        log(f"baseline drift check skipped: {e}")
+        return None
+
+
 def loadgen_status():
     try:
         st = json.load(open(LOADGEN_STATUS))
@@ -593,6 +642,7 @@ def main():
         biz_before = orders_count()
         b0 = (time.time(), time.time() + B0_S)
         log("B0 (healthy baseline)"); wait_until(b0[1])
+        meta["baseline_drift"] = baseline_drift_check(b0)
 
         t_fault = time.time()
         f_ok, f_info = apply_fault(a.fault, fault_target, chaos_name, a.fault_param)
