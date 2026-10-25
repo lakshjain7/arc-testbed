@@ -9,7 +9,7 @@
 #   ops/cleanup.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
 
-for kind in networkchaos podchaos stresschaos; do
+for kind in networkchaos podchaos stresschaos httpchaos podhttpchaos; do
   for o in $($K get "$kind" -o name 2>/dev/null); do
     say "deleting $o"
     $K delete "$o" --wait=true --timeout=60s >/dev/null 2>&1 || {

@@ -4,13 +4,16 @@
 # saturated, i.e. worst flow < 80 % bad), clean teardown, and the cluster healthy again afterwards.
 #   ops/lab/smoke-heldout.sh                       all of them (about 8 x 9 min)
 #   ops/lab/smoke-heldout.sh load-surge:2          just one fault[:level]
+#   ops/lab/smoke-heldout.sh call-cut:ts-preserve-service>ts-assurance-service    a call-cut link (caller>callee)
 # Run with the campaign's load generator already running (same rate and ARC_MIX as the campaign).
 . "$(dirname "${BASH_SOURCE[0]}")/../../lib/env.sh"
 T=${SMOKE_TARGET:-ts-seat-service}
 CASES=${*:-"http-error call-cut shared-db-slow:5 shared-db-slow:15 load-surge:1.5 load-surge:2"}
 for c in $CASES; do
   f=${c%%:*}; l=${c#*:}; [ "$l" = "$c" ] && l=""
-  id="ep_smoke_${f//-/}_${l//./p}_$(date +%H%M%S)"
+  T=${SMOKE_TARGET:-ts-seat-service}
+  if [ "${l#*>}" != "$l" ]; then T=${l%%>*}; l=${l#*>}; fi          # link: the caller is the fault target, the callee the level
+  id="ep_smoke_${f//-/}_$(echo "${l//./p}" | sed 's/ts-//;s/-service//')_$(date +%H%M%S)"
   say "== $f ${l:+level $l} on $T ($id)"
   python3 "$ARC_ROOT/harness/run_episode.py" --id "$id" --fault "$f" ${l:+--fault-param "$l"} --fault-target "$T" \
       --action noop --target "$T" --delay 120 --seed 1 > "$ARC_DATA/logs/$id.smoke.log" 2>&1

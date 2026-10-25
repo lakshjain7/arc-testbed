@@ -75,7 +75,11 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_sca
     conds = [("none", None), ("pod-kill", None)] + [(f, l) for f in ("network-delay", "net-loss", "cpu-squeeze", "db-delay")
                                                     for l in levels.get(f, [])]         + ([("pod-hang", None)] if levels.get("pod-hang") else []) + (HARD if hard else [])
     # held-out faults (decision log 10g): on/off ones, then ones with levels
-    conds += [(f, None) for f in ("http-error", "call-cut") if levels.get(f)]
+    if levels.get("http-error"):
+        conds.append(("http-error", None))           # does not attach on this stack (lab smoke test, finding F25)
+    cc = levels.get("call-cut")
+    if cc:        # True: cut the target's busiest callee, found live; or a list of "caller>callee" links, one condition each
+        conds += [("call-cut", l) for l in cc] if isinstance(cc, list) else [("call-cut", None)]
     conds += [(f, l) for f in ("shared-db-slow", "load-surge") for l in levels.get(f, [])]
     eps, block = [], 0
     while len(eps) < n_episodes:
@@ -91,6 +95,8 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_sca
             # repeated as needed, so fewer than 7 targets still give complete blocks (lab, 21 Oct: with
             # 3 targets the old code made blocks of 4 and dropped actions)
             ftargets = []
+            if fault == "call-cut" and isinstance(level, str):
+                ftargets = [level.split(">")[0]] * 7        # a link belongs to its caller: the whole block cuts the same link
             while len(ftargets) < 7:
                 ftargets += rng.sample(T, len(T))
             ftargets = ftargets[:7]
@@ -101,6 +107,11 @@ def make_plan(name, n_episodes, seed, hard, delay_max, levels=LEVELS, target_sca
                     at = ft
                 else:
                     at = rng.choice([t for t in T if t != ft])
+                if fault == "call-cut" and isinstance(level, str):
+                    eps.append({"id": f"ep_{name}_{arcenv.CLUSTER}_b{block:03d}_{i}", "block": block, "fault": fault,
+                                "level": level.split(">")[1], "level_nominal": level, "fault_target": ft, "action": act,
+                                "action_target": at, "delay": round(rng.uniform(60, delay_max)), "seed": rng.randrange(1 << 30)})
+                    continue
                 lvl = (round(level * target_scale.get(ft, 1), 2) if fault in SCALED_FAULTS
                        else round(level * (db_scale or {}).get(ft, 1), 2) if fault == "db-delay" else level)
                 eps.append({"id": f"ep_{name}_{arcenv.CLUSTER}_b{block:03d}_{i}", "block": block, "fault": fault,
@@ -302,6 +313,8 @@ def main():
     pl.add_argument("--hang", action="store_true", help="batch 2: include the pod-hang fault (one level)")
     pl.add_argument("--http-error", action="store_true", help="held-out: the target answers HTTP 500")
     pl.add_argument("--call-cut", action="store_true", help="held-out: cut the target's link to its busiest callee")
+    pl.add_argument("--call-cut-links", type=lambda v: [x for x in v.split(",") if x], default=[],
+                    help="held-out: links to cut, one condition each, e.g. ts-preserve-service>ts-assurance-service,ts-seat-service>ts-order-other-service")
     pl.add_argument("--shared-db-slow", type=num, default=[], help="held-out: every service's database replies delayed (ms), e.g. 5,15")
     pl.add_argument("--surge", type=num, default=[], help="held-out: load multiplier of an extra load generator, e.g. 1.5,2")
     for nm in ("run", "status"):
@@ -316,7 +329,7 @@ def main():
         seed = a.seed if a.seed is not None else int(hashlib.md5(f"{a.name}/{arcenv.CLUSTER}".encode()).hexdigest()[:8], 16)
         plan = make_plan(a.name, a.episodes, seed, a.hard, a.delay_max,
                          {"network-delay": a.delay, "net-loss": a.loss, "cpu-squeeze": a.squeeze,
-                          "db-delay": a.db_delay, "pod-hang": a.hang, "http-error": a.http_error, "call-cut": a.call_cut,
+                          "db-delay": a.db_delay, "pod-hang": a.hang, "http-error": a.http_error, "call-cut": a.call_cut_links or a.call_cut,
                           "shared-db-slow": a.shared_db_slow, "load-surge": a.surge}, a.target_scale, a.targets, a.db_scale)
         json.dump(plan, open(plan_path(a.name), "w"), indent=1)
         eps = plan["episodes"]
