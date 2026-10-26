@@ -5,3 +5,6 @@ __pycache__/
 /data/
 arc-data/
 .env
+
+# slide decks and renders (college template and logo; not for the public repo)
+docs/ppt/
