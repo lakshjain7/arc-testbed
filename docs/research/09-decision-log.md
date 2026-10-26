@@ -520,3 +520,22 @@ bar 50 on the unseen system (0.48 against 0.38). (3) ARC's yes/no F1 is above th
 (9) Absolute errors are not comparable across bars (the zero predictor's MAE changes from 4.6 to 6.6); compare ratios.
 At 1000 ms the remaining damage is mostly outright failures (8.5 % of scored services still show >= 10 points against 10.2 % with the real labels), so the 1000 ms bar
 tests failure prediction, not slowdown prediction.
+
+### 10k. Action ranking and hard pairs across the latency bars, 5-fold (2026-10-26)
+
+Batch 1, 5-fold by block, one seed per fold, pairs pooled over the folds (same fault type and target, different actions;
+ordering of the observed net effect, ties under 2 points skipped).
+
+| Bar (ms) | Pairs | ARC right | Action-mean right | Lead | Hard pairs | ARC | Action-mean |
+|---|---|---|---|---|---|---|---|
+| 50 | 2,079 | 83.9 % | 75.0 % | +9.0 | 244 | 69.3 % | 47.5 % |
+| 100 (real labels) | 1,943 | 86.2 % | 80.2 % | +5.9 | 100 | 67.0 % | 51.0 % |
+| 250 | 1,797 | 90.8 % | 84.7 % | +6.0 | 91 | 46.2 % | 65.9 % |
+| 500 | 1,690 | 94.2 % | 88.9 % | +5.2 | 45* | 62.2 % | 53.3 % |
+| 1000 | 1,600 | 96.0 % | 90.6 % | +5.4 | 51 | 43.1 % | 45.1 % |
+
+(*hard pairs at 500 ms: from the first run, whose fold 4 had not finished: 4 of 5 folds.)
+- Robust: ARC orders pairs of actions better than the action-mean rule at every bar, by 5.2 to 9.0 points on 1,600-2,100 pairs.
+- Not robust: hard pairs (those where the two action types have similar training means). ARC wins at 50, 100 and 500 ms, loses at 250 ms (46 % against 66 %) and ties at
+  1000 ms (43 % against 45 %). The paper must not claim superiority on hard pairs; report the table.
+- Accuracy rises with the bar for both methods because the coarser the bar, the more the outcome is decided by whether a restart/drain happens at all.
