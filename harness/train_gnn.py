@@ -187,6 +187,12 @@ def main(args):
             sub = [e for e in test if e["fault"]["type"] == f]
             r = evaluate(model, sub, [D[id(e)] for e in sub], key)
             print(f"    fault {f:14s} {len(sub):4d} episodes: MAE {r[0]:.2f}, Spearman {r[1]:.3f}, top-1 {r[2]:.2f}")
+    if "--by-condition" in args:    # last seed's model, split by (fault type, level): e.g. each call-cut link, each surge level
+        conds = sorted({(e["fault"]["type"], str(e["fault"].get("level"))) for e in test})
+        for ft, lv in conds:
+            sub = [e for e in test if e["fault"]["type"] == ft and str(e["fault"].get("level")) == lv]
+            r = evaluate(model, sub, [D[id(e)] for e in sub], key)
+            print(f"    condition {ft}@{lv:28s} {len(sub):4d} episodes: MAE {r[0]:.2f}, Spearman {r[1]:.3f}, top-1 {r[2]:.2f}")
     m = [sum(x[i] for x in res) / len(res) for i in range(3)]
     sd = [(sum((x[i] - m[i]) ** 2 for x in res) / max(len(res) - 1, 1)) ** 0.5 for i in range(3)]
     print(f"GNN over {seeds} seeds, target {key}: MAE {m[0]:.2f} ± {sd[0]:.2f}, Spearman {m[1]:.3f} ± {sd[1]:.3f}, "
