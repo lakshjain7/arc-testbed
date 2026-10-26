@@ -539,3 +539,17 @@ ordering of the observed net effect, ties under 2 points skipped).
 - Not robust: hard pairs (those where the two action types have similar training means). ARC wins at 50, 100 and 500 ms, loses at 250 ms (46 % against 66 %) and ties at
   1000 ms (43 % against 45 %). The paper must not claim superiority on hard pairs; report the table.
 - Accuracy rises with the bar for both methods because the coarser the bar, the more the outcome is decided by whether a restart/drain happens at all.
+
+### 10l. Higher load (T5): trained at 4 req/s, tested at 8 req/s on wide2 (2026-10-26)
+
+ARC (3 seeds, call-failure inputs, latency off) trained on wide1 (4 req/s), tested on wide2 (8 req/s). The cancel-flow drift (F21) makes the
+relative labels of the second half of wide2 unreliable, so two tests: the first half (blocks 1-24, 168 episodes, calibrated bar) and all of wide2
+under the fixed 1000 ms bar (301 episodes).
+
+| Test | ARC error / Spearman / top-1 | Trees | Role rule | Dependency map | Runbook average | No damage |
+|---|---|---|---|---|---|---|
+| wide2 first half, calibrated bar | 2.78 / .751 / .50 | 4.11 | 4.46 | 5.88 | 7.82 | 6.15 |
+| all wide2, 1 s bar | 2.12 / .744 / .46 | 4.38 | 4.17 | 5.79 | 7.47 | 5.56 |
+
+ARC's error is 32-52 % below the best baseline at double the load, and its ranking of services (Spearman .74-.75) is above the trees' (.69) here.
+Yes/no F1: 0.70 and 0.80. The deck (docs/ppt, not in the repo) slide "Results: generalisation" reads these numbers directly from the test log.
