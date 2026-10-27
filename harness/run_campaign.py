@@ -42,6 +42,11 @@ PLANS = os.path.join(arcenv.DATA, "plans")
 os.makedirs(PLANS, exist_ok=True)
 
 
+def short(n):
+    """Service name without the Train Ticket ts-...-service decoration (Boutique names are kept as they are)."""
+    return (n[3:-8] if n.startswith("ts-") and n.endswith("-service") else n) or "-"
+
+
 def log(msg):
     try:
         print(f"{time.strftime('%m-%d %H:%M:%S')} {msg}", flush=True)
@@ -140,8 +145,8 @@ def run_one(e, suffix=""):
         cmd += ["--fault-param", str(e["level"])]
         if e.get("level_nominal") is not None and e["level_nominal"] != e["level"]:
             cmd += ["--fault-nominal", str(e["level_nominal"])]
-    log(f">>> {ep_id}: fault={e['fault']}({e.get('level')})@{(e.get('fault_target') or '-')[3:-8] or '-'} "
-        f"action={e['action']}@{e['action_target'][3:-8]} delay={e['delay']}s")
+    log(f">>> {ep_id}: fault={e['fault']}({e.get('level')})@{short(e.get('fault_target') or '-')} "
+        f"action={e['action']}@{short(e['action_target'])} delay={e['delay']}s")
     child = subprocess.Popen(cmd, start_new_session=True)     # own session: signals reach it only through us
     try:
         rc = child.wait()
@@ -163,10 +168,14 @@ def run_one(e, suffix=""):
 
 
 def repair():
-    log("the cluster keeps failing its gates; repairing (ops/recover-after-restart.sh + warm-up)")
+    log("the cluster keeps failing its gates; repairing" + (" (stop the load, clean up, wait)" if arcenv.APP == "boutique" else " (ops/recover-after-restart.sh + warm-up)"))
     subprocess.run(["bash", arcenv.script("loadgen", "stop-loadgen.sh")])
-    subprocess.run(["bash", arcenv.script("ops", "recover-after-restart.sh")])
-    subprocess.run(["bash", arcenv.script("loadgen", "warmup.sh")])
+    if arcenv.APP == "boutique":      # no registry or databases to recover: undo leftovers, let the pods settle
+        subprocess.run(["bash", arcenv.script("ops", "cleanup.sh")])
+        time.sleep(120)
+    else:
+        subprocess.run(["bash", arcenv.script("ops", "recover-after-restart.sh")])
+        subprocess.run(["bash", arcenv.script("loadgen", "warmup.sh")])
     ensure_load()
 
 
@@ -181,7 +190,7 @@ def ensure_load(rate=None):
         pass
     rate = rate or float(os.environ.get("ARC_RATE", "2"))
     log(f"starting the continuous load generator at {rate} req/s and letting it settle for 5 min")
-    subprocess.Popen([sys.executable, arcenv.script("loadgen", "loadgen.py"), "--rate", str(rate), "--print-every", "900"],
+    subprocess.Popen([sys.executable, arcenv.script(*arcenv.LOADGEN_SCRIPT), "--rate", str(rate), "--print-every", "900"],
                      stdout=open(os.path.join(arcenv.LOGS, "loadgen-continuous.log"), "a"), stderr=subprocess.STDOUT,
                      start_new_session=True)
     time.sleep(300)
@@ -338,11 +347,11 @@ def main():
         print("  faults: ", dict(Counter(f"{e['fault']}{'' if e['level'] is None else ':' + str(e.get('level_nominal', e['level']))}" for e in eps)))
         if a.target_scale:
             print("  per-target scale for delay and loss:", a.target_scale, "-> applied levels:",
-                  dict(Counter(f"{e['fault']}@{e['fault_target'][3:-8]}:{e['level']}" for e in eps
+                  dict(Counter(f"{e['fault']}@{short(e['fault_target'])}:{e['level']}" for e in eps
                                if e["fault"] in SCALED_FAULTS and e["fault_target"] in a.target_scale)))
         if a.db_scale:
             print("  per-target scale for db-delay:", a.db_scale, "-> applied levels:",
-                  dict(Counter(f"db-delay@{e['fault_target'][3:-8]}:{e['level']}" for e in eps
+                  dict(Counter(f"db-delay@{short(e['fault_target'])}:{e['level']}" for e in eps
                                if e["fault"] == "db-delay" and e["fault_target"] in a.db_scale)))
         print("  actions:", dict(Counter(e["action"] for e in eps)))
         print(f"  at ~10 min per episode: about {len(eps)*10/60:.0f} hours ({len(eps)*10/60/24:.1f} days) on this cluster")
