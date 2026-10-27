@@ -553,3 +553,15 @@ under the fixed 1000 ms bar (301 episodes).
 
 ARC's error is 32-52 % below the best baseline at double the load, and its ranking of services (Spearman .74-.75) is above the trees' (.69) here.
 Yes/no F1: 0.70 and 0.80. The deck (docs/ppt, not in the repo) slide "Results: generalisation" reads these numbers directly from the test log.
+
+## 10m. Second application: Online Boutique (27 Oct 2026)
+
+Why: the main weakness of v1.0 is one system. A second application gives a cross-application result in the paper and in v1.1 of the dataset.
+
+- Setup (`boutique/`): kind cluster `boutique` next to Train Ticket, Online Boutique v0.10.1 (11 services + Redis), same telemetry (OTel spanmetrics + servicegraph at 5 s, kube-state-metrics, cAdvisor), Chaos Mesh 2.6.3. Open-loop load generator `boutique/loadgen_boutique.py` (reuses the Train Ticket engine): browse, home, currency, add, cart, checkout.
+- Telemetry check (lab, 27 Oct): 7 of 10 services emit server spans. adservice, cartservice and shippingservice (v0.10.1) emit none; no later release (up to v0.10.7) is documented to fix this. Decision: stay with Boutique; name the three from their callers' client spans (servicegraph `virtual_node_peer_attributes`) and derive their labels from the edge into them (request count, failures, caller-side latency; threshold = the 100 ms floor; bad = max(slow, failed)). Recorded per episode in `edge_counters.csv.gz`. This is the caller's view, not the service's own; to be stated in the paper.
+- Harness port: `ARC_APP=boutique` (default trainticket). Boutique's drain action is a Chaos Mesh partition between the target and the other pods (no service registry exists to disable an instance in). Faults used: none, pod-kill, pod-hang, network delay, packet loss, CPU squeeze (no database fault: the services are stateless apart from Redis).
+- Smoke test (5 episodes, lab): all ok. drain: 620 of 755 requests failed in M, frontend HARM. restart-pod, rollout-restart, scale-up and cpu-bump: no label-visible damage. restart-pod does cause a ~10 s error burst (7 of 30 requests in the 10 s after the action, 0 of 37 before) that the 180 s label window averages to about 0.5 %, far below the 5 to 10 point detection limit; the raw requests keep it.
+- Bugs found by the smoke test and the first calibration: (1) both applications shared one calibration folder (labels used Train Ticket's thresholds); Boutique now has its own. (2) `run_campaign.ensure_load` started the Train Ticket load generator for Boutique, so the first calibration (20 episodes) ran at the episode's own 2 req/s instead of 8; kept as `calibration-boutique-2rps`, repeated at 8 req/s. (3) With 4 req/s, checkout/payment/email had under 30 requests per window ("inconclusive"); load raised to 8 req/s and checkout weight to 20 %.
+- Thresholds: every calibrated T is the 100 ms floor (healthy latencies are about 10 ms), held-out false harm 0/42.
+- Regression: the label change was checked on 6 held-out Train Ticket episodes: identical output before and after.

@@ -84,6 +84,20 @@ def step_increments(d):
         v = _f(r["value"])
         if v is not None:
             series[(r["service"], r["op"], r["status"], r["le"])].append((int(r["t"]), v))
+    # Online Boutique: adservice, cartservice and shippingservice emit no server spans. Their request counts, failures
+    # and latency exist only on the edges into them, as their callers saw them (edge_counters.csv.gz, written by
+    # export_episode for Boutique). Each edge becomes a pseudo-operation "edge:<caller>" of the callee, with the
+    # servicegraph client histogram (seconds -> ms) as its buckets. Services that have server spans are untouched.
+    observed = {k[0] for k in series if k[2] in ("ok", "error")}
+    ep = os.path.join(d, "edge_counters.csv.gz")
+    if os.path.exists(ep):
+        for r in csv.DictReader(gzip.open(ep, "rt")):
+            if r["server"] in observed or not r["key"].startswith("le=") or r["client"] in ("user", "otel-collector"):
+                continue
+            v = _f(r["value"])
+            le = r["key"][3:]
+            if v is not None:
+                series[(r["server"], "edge:" + r["client"], "ok", le if le == "+Inf" else format(float(le) * 1000, ".6g"))].append((int(r["t"]), v))
     inc = defaultdict(list)
     for (svc, op, st, le), pts in series.items():
         pts.sort()
@@ -115,6 +129,8 @@ def stall_ranges(rows):
 
 # ---- counting -------------------------------------------------------------------------------
 def threshold(slo, svc, op):
+    if op.startswith("edge:"):        # callee seen only from its callers (Boutique): no per-operation calibration exists
+        return LAT_FLOOR_MS
     return slo.get(svc, {}).get(op, {}).get("T_ms", FALLBACK_T_MS)
 
 
@@ -144,6 +160,10 @@ def per_step_counts(incs, svc, slo, fixed_T=None):
         if steps[t][0] == 0:
             steps[t][0] += x
             steps[t][1] += x
+        elif all(op.startswith("edge:") for (tt, op, st) in by if tt == t):
+            # edge-observed service: the histogram counts every call, failed ones included, so a failed call is
+            # either already "slow" or fast; bad is at least the larger of the two (never more than N)
+            steps[t][1] = min(max(steps[t][1], x), steps[t][0])
     return steps
 
 
