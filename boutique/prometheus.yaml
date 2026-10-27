@@ -1,0 +1,69 @@
+# Prometheus for Online Boutique (Train Ticket's chart shipped its own; here we install one).
+# 5 s scrape of the OTel collector and kube-state-metrics, 15 s of cAdvisor (via the kubelet), as in the Train Ticket setup.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: prometheus, namespace: boutique}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: prometheus-boutique}
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/proxy, nodes/metrics, services, endpoints, pods]
+    verbs: [get, list, watch]
+  - nonResourceURLs: [/metrics, /metrics/cadvisor]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: prometheus-boutique}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: prometheus-boutique}
+subjects: [{kind: ServiceAccount, name: prometheus, namespace: boutique}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: prometheus-config, namespace: boutique}
+data:
+  prometheus.yml: |
+    global: {scrape_interval: 15s, evaluation_interval: 15s}
+    scrape_configs:
+      - job_name: otel-collector
+        scrape_interval: 5s
+        static_configs: [{targets: ["otel-collector.boutique.svc:8889"]}]
+      - job_name: kube-state-metrics
+        scrape_interval: 5s
+        static_configs: [{targets: ["kube-state-metrics.boutique.svc:8080"]}]
+      - job_name: cadvisor
+        scrape_interval: 15s
+        scheme: https
+        tls_config: {insecure_skip_verify: true}
+        authorization: {credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token}
+        kubernetes_sd_configs: [{role: node}]
+        metrics_path: /metrics/cadvisor
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: prometheus, namespace: boutique}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: prometheus}}
+  template:
+    metadata: {labels: {app: prometheus}}
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.55.1
+          args: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d", "--web.enable-lifecycle"]
+          ports: [{containerPort: 9090}]
+          resources: {requests: {cpu: 200m, memory: 512Mi}, limits: {memory: 2Gi}}
+          volumeMounts: [{name: conf, mountPath: /etc/prometheus}]
+      volumes: [{name: conf, configMap: {name: prometheus-config}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: prometheus, namespace: boutique}
+spec:
+  type: NodePort
+  selector: {app: prometheus}
+  ports: [{port: 9090, targetPort: 9090, nodePort: 30003}]

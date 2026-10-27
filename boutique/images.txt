@@ -1,0 +1,15 @@
+# Online Boutique v0.10.1 (pinned) and the monitoring pieces. One image per line.
+us-central1-docker.pkg.dev/google-samples/microservices-demo/adservice:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/cartservice:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/checkoutservice:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/currencyservice:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/emailservice:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/frontend:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/paymentservice:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/productcatalogservice:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/recommendationservice:v0.10.1
+us-central1-docker.pkg.dev/google-samples/microservices-demo/shippingservice:v0.10.1
+redis:alpine
+otel/opentelemetry-collector-contrib:0.116.1
+prom/prometheus:v2.55.1
+registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0

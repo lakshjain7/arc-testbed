@@ -1,0 +1,61 @@
+# OpenTelemetry Collector for Online Boutique: same pipeline as setup/otel-collector.yaml
+# (servicegraph + spanmetrics, 5 s flush, buckets to 30 s) so every harness query works unchanged.
+# The Boutique services speak OTLP over gRPC, so :4317 is used (Train Ticket's Java agent used :4318).
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: otel-collector-config, namespace: boutique}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: 0.0.0.0:4317}
+          http: {endpoint: 0.0.0.0:4318}
+    connectors:
+      servicegraph:
+        latency_histogram_buckets: [10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 750ms, 1s, 2s, 5s, 10s, 15s, 30s]
+        dimensions: []
+        metrics_flush_interval: 5s
+        store: {ttl: 30s, max_items: 100000}
+        cache_loop: 2m
+        store_expiration_loop: 10s
+      spanmetrics:
+        metrics_flush_interval: 5s
+        histogram:
+          explicit:
+            buckets: [10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 750ms, 1s, 2s, 5s, 10s, 15s, 30s]
+        dimensions: []
+    exporters:
+      prometheus: {endpoint: 0.0.0.0:8889, enable_open_metrics: true}
+    service:
+      pipelines:
+        traces: {receivers: [otlp], exporters: [servicegraph, spanmetrics]}
+        metrics/servicegraph: {receivers: [servicegraph], exporters: [prometheus]}
+        metrics/spanmetrics: {receivers: [spanmetrics], exporters: [prometheus]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: otel-collector, namespace: boutique, labels: {app: otel-collector}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: otel-collector}}
+  template:
+    metadata:
+      labels: {app: otel-collector}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "8889"}
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.116.1
+          args: ["--config=/conf/config.yaml"]
+          ports: [{containerPort: 4317}, {containerPort: 4318}, {containerPort: 8889}]
+          resources: {requests: {cpu: 200m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+          volumeMounts: [{name: conf, mountPath: /conf}]
+      volumes: [{name: conf, configMap: {name: otel-collector-config}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: otel-collector, namespace: boutique}
+spec:
+  selector: {app: otel-collector}
+  ports: [{name: otlp-grpc, port: 4317}, {name: otlp-http, port: 4318}, {name: prom, port: 8889}]
