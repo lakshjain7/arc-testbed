@@ -28,7 +28,9 @@ import loadgen as L
 
 PRODUCTS = ["OLJCESPC7Z", "66VCHSJNUP", "1YMWWN1N4O", "L9ECAV7KIM", "2ZYFJ3GM2N", "0PUK6V6EV0", "LS4PSXUNUM", "9SIQT8TOJO", "6E92ZMYYFZ"]
 CURRENCIES = ["EUR", "USD", "JPY", "CAD", "GBP", "TRY"]
-L.MIXES["boutique"] = "browse=40,home=12,currency=6,add=14,cart=14,checkout=14"
+# checkout is the only flow that reaches checkout, payment, email and shipping: at 8 req/s it needs enough weight for
+# those services to see the 30 requests per 30 s window the labels require (smoke test: 14 % at 4 req/s left them "inconclusive")
+L.MIXES["boutique"] = "browse=34,home=12,currency=6,add=14,cart=14,checkout=20"
 L.MIX_EXTRAS["boutique"] = ""
 USERS = [str(uuid.uuid4()) for _ in range(50)]
 

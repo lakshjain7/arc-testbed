@@ -176,6 +176,36 @@ def export_op_counters(start, end, w, path):
     return len(rows)
 
 
+EDGE_COUNTER_QUERIES = {   # cumulative, per caller->callee edge, as the CALLER saw the call (servicegraph client side)
+    "total":  'sum by (client, server) (traces_service_graph_request_total)',
+    "failed": 'sum by (client, server) (traces_service_graph_request_failed_total)',
+    "le":     'sum by (client, server, le) (traces_service_graph_request_client_seconds_bucket)',   # le in SECONDS
+}
+
+
+def export_edge_counters(start, end, w, path):
+    """Online Boutique only. adservice, cartservice and shippingservice emit no server spans, so their request
+    counts, failures and latency exist only on the edges into them. Same exact-counter idea as op_counters, but per
+    edge. Series that do not change inside the episode are dropped (flat)."""
+    rows = []
+    for key, q in EDGE_COUNTER_QUERIES.items():
+        for series in prom_range(q, start - STEP, end):
+            m = series["metric"]
+            vals = [(int(t), num(v)) for t, v in series["values"]]
+            if len({v for _, v in vals}) <= 1:
+                continue
+            k = ("le=" + m["le"]) if key == "le" else key
+            for t, v in vals:
+                rows.append((t, m.get("client"), m.get("server"), k, v))
+    rows.sort(key=lambda r: (r[0], str(r[1]), str(r[2]), r[3]))
+    with gzip.open(path, "wt", newline="") as f:
+        wr = csv.writer(f)
+        wr.writerow(["t", "window", "client", "server", "key", "value"])
+        for t, c, sv, k, v in rows:
+            wr.writerow([t, window_of(t, w), c, sv, k, v])
+    return len(rows)
+
+
 def export_edges(start, end, w, path):
     grid = {}
     for field, q in EDGE_QUERIES.items():
@@ -248,6 +278,7 @@ def main():
     n_e, n_edge = export_edges(start, end, w, os.path.join(d, "edges.csv.gz"))
     n_k = export_counters(start, end, w, os.path.join(d, "counters.csv.gz"))
     n_o = export_op_counters(start, end, w, os.path.join(d, "op_counters.csv.gz"))
+    n_ec = export_edge_counters(start, end, w, os.path.join(d, "edge_counters.csv.gz")) if BOUTIQUE else None
     n_c = export_client(start, end, w, os.path.join(d, "client.csv.gz"), a.loadgen_dir)
     n_ev = export_events(start, end, os.path.join(d, "events.json"))
     meta = json.load(open(a.meta)) if a.meta else {}
@@ -257,7 +288,7 @@ def main():
                  "exported_at": time.time(), "exporter_version": 3,
                  "counts": {"service_rows": n_s, "services": n_svc, "edge_rows": n_e, "edges": n_edge,
                             "counter_rows": n_k, "op_counter_rows": n_o,
-                            "client_requests": n_c, "k8s_events": n_ev}})
+                            "client_requests": n_c, "k8s_events": n_ev, "edge_counter_rows": n_ec}})
     json.dump(meta, open(os.path.join(d, "meta.json"), "w"), indent=1)
     size = sum(os.path.getsize(os.path.join(d, f)) for f in os.listdir(d))
     print(f"{a.id}: {n_svc} services x {n_s // max(n_svc, 1)} steps, {n_edge} edges, {n_c} client requests, "
