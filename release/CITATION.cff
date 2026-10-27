@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this dataset, please cite it as below."
+title: "ARC dataset v1.0: per-service damage of remediation actions in a microservice system"
+version: "1.0.0"
+date-released: "2026-10-31"   # set to the publication date
+license: CC-BY-4.0
+repository-code: "https://github.com/lakshjain7/arc-testbed"
+doi: "10.5281/zenodo.XXXXXXX"   # fill in after the Zenodo record is published
+authors:
+  - family-names: "Jain"
+    given-names: "Laksh"
+    affiliation: "Department of Information Technology, Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"
+  - family-names: "Singh"
+    given-names: "Abhishek Kumar"
+    affiliation: "Department of Information Technology, Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"
+  - family-names: "Choudhary"
+    given-names: "Yogesh"
+    affiliation: "Department of Information Technology, Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"
+  - family-names: "Kolikipogu"
+    given-names: "Ramakrishna"
+    affiliation: "Department of Information Technology, Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"
+keywords: [microservices, remediation, blast radius, fault injection, AIOps, graph neural network]
