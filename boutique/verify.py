@@ -29,3 +29,9 @@ for s in EXPECT:
         missing.append(s)
 print("edges:", ", ".join(f"{c}->{s} ({n:.0f})" for c, s, n in sorted(edges)))
 print("MISSING (no server spans): " + (", ".join(missing) if missing else "none"))
+for m in missing:
+    seen = [(c, n) for c, sv, n in edges if sv == m]
+    print(f"  {m}: seen from callers as " + (", ".join(f"{c} ({n:.0f} calls)" for c, n in seen) if seen else "NOT SEEN AT ALL (virtual node naming failed)"))
+unnamed = [(c, n) for c, sv, n in edges if sv in ("unknown", "")]
+if unnamed:
+    print("calls to an unnamed callee:", ", ".join(f"{c} ({n:.0f})" for c, n in unnamed))

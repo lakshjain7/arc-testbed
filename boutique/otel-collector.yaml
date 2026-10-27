@@ -16,6 +16,9 @@ data:
         latency_histogram_buckets: [10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 750ms, 1s, 2s, 5s, 10s, 15s, 30s]
         dimensions: []
         metrics_flush_interval: 5s
+        # adservice, cartservice and shippingservice (v0.10.1) emit no server spans. Their callers' client spans name them
+        # through the peer address, so they still appear as nodes (rate, failures, latency seen from the caller).
+        virtual_node_peer_attributes: [peer.service, server.address, net.peer.name, rpc.service]
         store: {ttl: 30s, max_items: 100000}
         cache_loop: 2m
         store_expiration_loop: 10s
