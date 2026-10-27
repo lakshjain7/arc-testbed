@@ -500,3 +500,10 @@ effective range is narrow. On our stack HTTP faults are still unproven (kept-ali
 - Dai et al., "Safe Remediation as Risk-Constrained Intervention Decision in Microservice Systems", arXiv:2607.20005
 - Basiri et al., "Chaos Engineering", arXiv:1702.05843 (steady state as a measurable output; control vs experiment group)
 - This repo: `docs/research/06-faults-actions-v2.md`, `07-pilot-results.md`, `docs/LAB-SETUP.md` (laptop reference numbers)
+
+### F26. Held-out run: orphaned load generator, drift-warning floor, results (2026-10-26/27)
+- The held-out campaign finished 26 Oct 13:39 UTC: 147/147 episodes ok, none stalled. Saturated before the action: call-cut config 21/21, call-cut order-other 21/21, call-cut assurance 0/21, surge 3 0/21, surge 4 6/21, pod-kill 6/21, none 0/21.
+- An old load generator (started by the held restart on 25 Oct) kept running at 8 req/s for about 1 h after the plan ended: `stop-loadgen.sh` and the end-of-plan stop used only the pid file, which no longer pointed at it. No episode was affected. Fix: `loadgen/stop-loadgen.sh` now also finds generators by process and matches them to the cluster by their ARC_CLUSTER environment.
+- `start-campaign.sh` ENVS did not pass ARC_MIX / ARC_CALIB in the held restart (the near-miss); it passes both now.
+- The baseline-drift warning tripped on orders at 12 ms with a 2 ms wobble (15 %). A warning now also needs a gap of at least 10 ms (`DRIFT_MIN_MS`).
+- MANIFEST-held.txt was regenerated from the recorded data (7 conditions x 21; old file kept as .bak). The archive was not rebuilt; its checksum is unchanged.
