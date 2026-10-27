@@ -226,7 +226,7 @@ def main():
     for d in (zen, hf):
         sums = []
         for fn in sorted(os.listdir(d)):
-            if fn != "SHA256SUMS.txt":
+            if fn != "SHA256SUMS.txt" and os.path.isfile(os.path.join(d, fn)):
                 sums.append(f"{sha256(os.path.join(d, fn))}  {fn}")
         open(os.path.join(d, "SHA256SUMS.txt"), "w").write("\n".join(sums) + "\n")
     open(os.path.join(out, "build-report.txt"), "w").write("\n".join(report) + "\n")
