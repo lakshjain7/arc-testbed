@@ -27,9 +27,18 @@ import arcenv
 
 PROM = arcenv.PROM_URL
 STEP = 5
-NS = "train-ticket"
+NS = arcenv.NS
 SERVER = 'span_kind="SPAN_KIND_SERVER"'
-C = f'namespace="{NS}",container=~"ts-.*-service"'
+BOUTIQUE = arcenv.APP == "boutique"
+# Train Ticket: one container per service, named like the service. Online Boutique: every container is called "server",
+# so resource series are summed per pod and the service name is cut out of the pod name (label "service").
+C = f'namespace="{NS}",container="server"' if BOUTIQUE else f'namespace="{NS}",container=~"ts-.*-service"'
+SVC = "service" if BOUTIQUE else "container"
+
+
+def per_service(expr_by_pod):
+    """expr_by_pod aggregates by (pod); on Boutique rename pod -> service (frontend-5d9c7b8f4-x2x7p -> frontend)."""
+    return f'label_replace({expr_by_pod}, "service", "$1", "pod", "(.*)-[^-]+-[^-]+")'
 
 # name -> (PromQL, label that identifies the service).
 # Lookback windows must hold >= 2 scrapes or rate() returns nothing (the first test export came
@@ -42,12 +51,18 @@ SERVICE_QUERIES = {
     "p50_ms":    (f'histogram_quantile(0.50, sum by (service_name, le) (rate(traces_span_metrics_duration_milliseconds_bucket{{{SERVER}}}[{TR}])))', "service_name"),
     "p95_ms":    (f'histogram_quantile(0.95, sum by (service_name, le) (rate(traces_span_metrics_duration_milliseconds_bucket{{{SERVER}}}[{TR}])))', "service_name"),
     "p99_ms":    (f'histogram_quantile(0.99, sum by (service_name, le) (rate(traces_span_metrics_duration_milliseconds_bucket{{{SERVER}}}[{TR}])))', "service_name"),
-    "cpu_cores": (f'sum by (container) (rate(container_cpu_usage_seconds_total{{{C}}}[{RS}]))', "container"),
-    "mem_mb":    (f'sum by (container) (container_memory_working_set_bytes{{{C}}}) / 1048576', "container"),
-    "throttled": (f'sum by (container) (rate(container_cpu_cfs_throttled_periods_total{{{C}}}[{RS}])) / '
-                  f'sum by (container) (rate(container_cpu_cfs_periods_total{{{C}}}[{RS}]))', "container"),
-    "restarts":  (f'sum by (container) (kube_pod_container_status_restarts_total{{namespace="{NS}",container=~"ts-.*-service"}})', "container"),
-    "ready":     (f'min by (container) (kube_pod_container_status_ready{{namespace="{NS}",container=~"ts-.*-service"}})', "container"),
+    "cpu_cores": (per_service(f'sum by (pod) (rate(container_cpu_usage_seconds_total{{{C}}}[{RS}]))') if BOUTIQUE else
+                  f'sum by (container) (rate(container_cpu_usage_seconds_total{{{C}}}[{RS}]))', SVC),
+    "mem_mb":    (per_service(f'sum by (pod) (container_memory_working_set_bytes{{{C}}}) / 1048576') if BOUTIQUE else
+                  f'sum by (container) (container_memory_working_set_bytes{{{C}}}) / 1048576', SVC),
+    "throttled": (per_service(f'sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{{{C}}}[{RS}])) / '
+                              f'sum by (pod) (rate(container_cpu_cfs_periods_total{{{C}}}[{RS}]))') if BOUTIQUE else
+                  f'sum by (container) (rate(container_cpu_cfs_throttled_periods_total{{{C}}}[{RS}])) / '
+                  f'sum by (container) (rate(container_cpu_cfs_periods_total{{{C}}}[{RS}]))', SVC),
+    "restarts":  (per_service(f'sum by (pod) (kube_pod_container_status_restarts_total{{{C}}})') if BOUTIQUE else
+                  f'sum by (container) (kube_pod_container_status_restarts_total{{namespace="{NS}",container=~"ts-.*-service"}})', SVC),
+    "ready":     (per_service(f'min by (pod) (kube_pod_container_status_ready{{{C}}})') if BOUTIQUE else
+                  f'min by (container) (kube_pod_container_status_ready{{namespace="{NS}",container=~"ts-.*-service"}})', SVC),
 }
 # Raw cumulative counters, for exact pooled statistics over a whole window (the labels use these;
 # averaging per-step p95s of a service with ~4 requests per step was pure noise). key = bucket

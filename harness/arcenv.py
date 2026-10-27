@@ -24,11 +24,33 @@ for _d in (RAW, LOADGEN_DIR, LOGS, CALIB):
     os.makedirs(_d, exist_ok=True)
 
 KCTX = f"kind-{CLUSTER}"
-NS = "train-ticket"
+# The application under test. "trainticket" (default) or "boutique" (Google's Online Boutique, second system).
+APP = os.environ.get("ARC_APP", "trainticket")
+NS = "boutique" if APP == "boutique" else "train-ticket"
 K = ["kubectl", "--context", KCTX, "-n", NS]
 
-PILOT_TARGETS = ["ts-seat-service", "ts-order-service", "ts-travel-service", "ts-basic-service",
-                 "ts-preserve-service", "ts-station-service"]
+if APP == "boutique":
+    # frontend is left out: it is the only entry point, so any fault or action on it breaks every flow at once
+    PILOT_TARGETS = ["productcatalogservice", "currencyservice", "recommendationservice", "checkoutservice",
+                     "cartservice", "shippingservice", "paymentservice", "adservice", "emailservice"]
+    SERVICE_SERVER_RE = "(ad|cart|checkout|currency|email|payment|productcatalog|recommendation|shipping)service|frontend"
+    LOADGEN_SCRIPT = ("boutique", "loadgen_boutique.py")
+    RESET_SCRIPT = ("boutique", "reset-state.sh")
+    BASE_CPU = "1"                      # CPU limit every service has in the deployment (setup-boutique.sh)
+else:
+    PILOT_TARGETS = ["ts-seat-service", "ts-order-service", "ts-travel-service", "ts-basic-service",
+                     "ts-preserve-service", "ts-station-service"]
+    SERVICE_SERVER_RE = "ts-.*"
+    LOADGEN_SCRIPT = ("loadgen", "loadgen.py")
+    RESET_SCRIPT = ("ops", "reset-data.sh")
+    BASE_CPU = "2"
+
+
+def pod_sel(svc):
+    """PromQL label selector for one service's container (Boutique's containers are all called "server")."""
+    if APP == "boutique":
+        return f'namespace="{NS}",pod=~"{svc}-[^-]+-[^-]+",container="server"'
+    return f'container="{svc}"'
 
 
 def script(*parts):

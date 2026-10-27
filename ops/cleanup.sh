@@ -19,19 +19,21 @@ for kind in networkchaos podchaos stresschaos httpchaos podhttpchaos; do
 done
 $K delete networkpolicy -l arc=quarantine --ignore-not-found >/dev/null 2>&1
 
-for d in $($K get deploy --no-headers | awk '$2!="0/0"{print $1}' | grep -E '^ts-.*-service$'); do
+if [ "$ARC_APP" = boutique ]; then SVC_RE='^(ad|cart|checkout|currency|email|payment|productcatalog|recommendation|shipping)service$|^frontend$'; BASE=1; else SVC_RE='^ts-.*-service$'; BASE=2; fi
+for d in $($K get deploy --no-headers | awk '$2!="0/0"{print $1}' | grep -E "$SVC_RE"); do
   want=$($K get deploy "$d" -o jsonpath='{.spec.replicas}')
   if [ "$want" != "1" ]; then say "$d has $want copies -> 1"; $K scale deploy "$d" --replicas=1 >/dev/null; fi
   for p in $($K get pods -l app="$d" --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'); do
     lim=$($K get pod "$p" -o jsonpath='{.spec.containers[0].resources.limits.cpu}')
-    if [ "$lim" != "2" ]; then
-      say "$p has cpu limit $lim -> 2"
-      $K patch pod "$p" --subresource resize -p "{\"spec\":{\"containers\":[{\"name\":\"$d\",\"resources\":{\"limits\":{\"cpu\":\"2\"},\"requests\":{\"cpu\":\"100m\"}}}]}}" >/dev/null
+    if [ "$lim" != "$BASE" ]; then
+      say "$p has cpu limit $lim -> $BASE"
+      cn=$($K get pod "$p" -o jsonpath='{.spec.containers[0].name}')
+      $K patch pod "$p" --subresource resize -p "{\"spec\":{\"containers\":[{\"name\":\"$cn\",\"resources\":{\"limits\":{\"cpu\":\"$BASE\"},\"requests\":{\"cpu\":\"100m\"}}}]}}" >/dev/null
     fi
   done
 done
 
-bad=$(bash "$ARC_ROOT/ops/nacos-health.sh" | tail -1 | cut -d: -f2)
+bad=""; [ "$ARC_APP" = boutique ] || bad=$(bash "$ARC_ROOT/ops/nacos-health.sh" | tail -1 | cut -d: -f2)
 for s in $bad; do
   ready=$($K get pods -l app="$s" -o jsonpath='{.items[0].status.containerStatuses[0].ready}' 2>/dev/null)
   if [ "$ready" = "true" ]; then

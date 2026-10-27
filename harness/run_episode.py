@@ -78,13 +78,18 @@ def health():
     bad = []
     for p in pods:
         name = p["metadata"]["name"]
-        if not name.startswith("ts-") or p["status"].get("phase") == "Succeeded":
+        if arcenv.APP == "boutique":
+            if name.startswith("loadgenerator") or p["status"].get("phase") == "Succeeded":
+                continue
+        elif not name.startswith("ts-") or p["status"].get("phase") == "Succeeded":
             continue
         cs = (p["status"].get("containerStatuses") or [{}])[0]
         if not cs.get("ready"):
             bad.append(name)
     if bad:
         return False, "not ready: " + ", ".join(bad)
+    if arcenv.APP == "boutique":
+        return True, "ok"          # no service registry to check; the steady-state gate watches the traffic itself
     out = sh(["bash", arcenv.script("ops", "nacos-health.sh")], check=False)
     missing = out.strip().splitlines()[-1].split(":", 1)[-1].strip() if out else "?"
     if missing:
@@ -172,6 +177,12 @@ def wait_steady():
 
 
 def orders_count():
+    if arcenv.APP == "boutique":      # business state = carts held in Redis
+        out = sh(K + ["exec", "deploy/redis-cart", "--", "redis-cli", "dbsize"], check=False)
+        try:
+            return {"carts": int(out.split()[-1])}
+        except (ValueError, IndexError):
+            return None
     out = sh(K + ["exec", "tsdb-mysql-0", "-c", "mysql", "--", "mysql", "-uroot", "-N", "-e",
                   "select count(*), sum(status=1) from ts.orders"], check=False)
     try:
@@ -187,6 +198,11 @@ def pod_of(svc):
     running = [p for p in items if p["status"].get("phase") == "Running"
                and not p["metadata"].get("deletionTimestamp")]      # skip pods already being killed
     return running[0] if running else None
+
+
+def cname(p):
+    """Name of the pod's first container (equals the service name in Train Ticket, "server" in Online Boutique)."""
+    return p["spec"]["containers"][0]["name"]
 
 
 def free_mb():
@@ -226,7 +242,7 @@ def apply_action(action, target, ep):
             return False, {"error": "no running pod"}
         rc = p["status"]["containerStatuses"][0].get("restartCount", 0)
         sh(K + ["patch", "pod", p["metadata"]["name"], "--subresource", "resize", "-p",
-                json.dumps({"spec": {"containers": [{"name": target, "resources": {"limits": {"cpu": "4"}}}]}})])
+                json.dumps({"spec": {"containers": [{"name": cname(p), "resources": {"limits": {"cpu": "4"}}}]}})])
         for _ in range(15):
             q = json.loads(sh(K + ["get", "pod", p["metadata"]["name"], "-o", "json"]))
             cs = q["status"]["containerStatuses"][0]
@@ -235,11 +251,13 @@ def apply_action(action, target, ep):
             time.sleep(1)
         return False, {"error": "cpu limit not 4 within 15 s, or the container restarted"}
     if action == "drain":
+        if arcenv.APP == "boutique":
+            return drain_boutique(target, ep)
         ok, info = nacos_enable(target, False)
         return ok, info
     if action == "quarantine":
         np_ = {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
-               "metadata": {"name": quarantine_name(ep), "namespace": "train-ticket"},
+               "metadata": {"name": quarantine_name(ep), "namespace": arcenv.NS},
                "spec": {"podSelector": {"matchLabels": {"app": target}}, "policyTypes": ["Ingress"], "ingress": []}}
         r = subprocess.run(K + ["apply", "-f", "-"], input=json.dumps(np_), capture_output=True, text=True)
         return (r.returncode == 0), ({"policy": quarantine_name(ep)} if r.returncode == 0 else {"error": r.stderr[:200]})
@@ -257,6 +275,35 @@ def apply_action(action, target, ep):
             time.sleep(1)
         return False, {"old_pod": old, "error": "no replacement pod within 30 s"}
     raise ValueError(action)
+
+
+def drain_name(ep):
+    return "arc-d-" + ep.replace("_", "-").lower()[:50]
+
+
+def drain_boutique(target, ep):
+    """Take a service out of rotation without stopping it. Online Boutique has no service registry to disable an
+    instance in, and gRPC callers keep their open connections when a Service's endpoints change, so the drain is a
+    network partition between the target and every other application pod (telemetry and monitoring stay reachable).
+    The process keeps running; callers get connection errors, as callers of a drained Train Ticket instance do."""
+    name = drain_name(ep)
+    cr = {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos",
+          "metadata": {"name": name, "namespace": arcenv.NS},
+          "spec": {"action": "partition", "mode": "all", "direction": "both",
+                   "selector": {"namespaces": [arcenv.NS], "labelSelectors": {"app": target}},
+                   "target": {"mode": "all", "selector": {"namespaces": [arcenv.NS], "expressionSelectors": [
+                       {"key": "app", "operator": "NotIn", "values": [target, "otel-collector", "prometheus"]}]}},
+                   "duration": "30m"}}
+    p = subprocess.run(K + ["apply", "-f", "-"], input=json.dumps(cr), capture_output=True, text=True)
+    if p.returncode:
+        return False, {"error": p.stderr.strip()[:300]}
+    for i in range(30):
+        st = json.loads(sh(K + ["get", "networkchaos", name, "-o", "json"], check=False) or "{}")
+        conds = {c["type"]: c["status"] for c in (st.get("status") or {}).get("conditions", [])}
+        if conds.get("AllInjected") == "True":
+            return True, {"kind": "NetworkChaos partition", "name": name, "verified_after_s": i}
+        time.sleep(1)
+    return False, {"error": "drain partition not AllInjected within 30 s", "conditions": conds}
 
 
 _DRAINED = {}   # service -> (ip, port): a disabled instance is HIDDEN from Nacos' list API, so re-enabling
@@ -306,13 +353,17 @@ def reset_action(action, target, ep):
         p = pod_of(target)
         if p:
             sh(K + ["patch", "pod", p["metadata"]["name"], "--subresource", "resize", "-p",
-                    json.dumps({"spec": {"containers": [{"name": target, "resources": {"limits": {"cpu": "2"}}}]}})],
+                    json.dumps({"spec": {"containers": [{"name": cname(p), "resources": {"limits": {"cpu": arcenv.BASE_CPU}}}]}})],
                check=False)
-        return "cpu limit back to 2"
+        return f"cpu limit back to {arcenv.BASE_CPU}"
     if action == "quarantine":
         sh(K + ["delete", "networkpolicy", quarantine_name(ep), "--ignore-not-found"], check=False)
         time.sleep(40)
         return "network policy removed"
+    if action == "drain" and arcenv.APP == "boutique":
+        r = subprocess.run(K + ["delete", "networkchaos", drain_name(ep), "--wait=true", "--timeout=90s"], capture_output=True, text=True)
+        time.sleep(15)
+        return f"drain partition removed (ok={r.returncode == 0})"
     if action == "drain":
         ok, _ = nacos_enable(target, True)
         time.sleep(40)          # callers' instance cache must pick the instance up again
@@ -359,7 +410,7 @@ FAULTS = ["none", "pod-kill", "network-delay", "net-loss", "cpu-squeeze", "black
 #   shared-db-slow  EVERY service's database replies are delayed (level in ms): many services at once, not
 #                   along calls. Replication between the MySQL copies is left alone.
 #   load-surge      nothing breaks: a second load generator adds (level - 1) x the running rate.
-DB_SELECTOR = {"namespaces": ["train-ticket"], "labelSelectors": {"app": "tsdb-mysql"}}   # all three copies (the leader moves)
+DB_SELECTOR = {"namespaces": [arcenv.NS], "labelSelectors": {"app": "tsdb-mysql"}}   # all three copies (the leader moves)
 SQUEEZE_MIN_M = 10        # 10m is the smallest CPU quota Kubernetes enforces. Was 25m: on a fast machine the quiet
                           # services use 6-17m, so every level hit the floor and gave the same limit (lab, 2026-10-10)
 
@@ -386,8 +437,8 @@ FAULT_DEFAULT_PARAM = {"network-delay": 50, "net-loss": 15, "cpu-squeeze": 2.5, 
 
 
 def chaos_cr(fault, target, name, param):
-    sel = {"namespaces": ["train-ticket"], "labelSelectors": {"app": target}}
-    md = {"name": name, "namespace": "train-ticket"}
+    sel = {"namespaces": [arcenv.NS], "labelSelectors": {"app": target}}
+    md = {"name": name, "namespace": arcenv.NS}
     # duration 30m is only a safety net; every fault is removed explicitly at teardown
     if fault == "pod-hang":
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "PodChaos", "metadata": md,
@@ -425,13 +476,13 @@ def chaos_cr(fault, target, name, param):
     if fault == "call-cut":
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
                 "spec": {"action": "partition", "mode": "all", "direction": "to",
-                         "selector": {"namespaces": ["train-ticket"], "labelSelectors": {"app": param}},
+                         "selector": {"namespaces": [arcenv.NS], "labelSelectors": {"app": param}},
                          "target": {"mode": "all", "selector": sel}, "duration": "30m"}}
     if fault == "shared-db-slow":
         ms = float(param or FAULT_DEFAULT_PARAM[fault])
         return {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "NetworkChaos", "metadata": md,
                 "spec": {"action": "delay", "mode": "all", "selector": DB_SELECTOR, "direction": "to",
-                         "target": {"mode": "all", "selector": {"namespaces": ["train-ticket"], "expressionSelectors": [
+                         "target": {"mode": "all", "selector": {"namespaces": [arcenv.NS], "expressionSelectors": [
                              {"key": "app", "operator": "NotIn", "values": ["tsdb-mysql"]}]}},
                          "delay": {"latency": f"{ms:g}ms", "jitter": f"{ms / 4:g}ms", "correlation": "25"},
                          "duration": "30m"}}
@@ -461,7 +512,7 @@ def set_cpu_limit(target, cpu, request=None):
     if request:
         res["requests"] = {"cpu": request}
     sh(K + ["patch", "pod", name, "--subresource", "resize", "-p",
-            json.dumps({"spec": {"containers": [{"name": target, "resources": res}]}})], check=False)
+            json.dumps({"spec": {"containers": [{"name": cname(p), "resources": res}]}})], check=False)
     for _ in range(15):
         q = json.loads(sh(K + ["get", "pod", name, "-o", "json"], check=False) or "{}")
         cs = ((q.get("status") or {}).get("containerStatuses") or [{}])[0]
@@ -492,7 +543,7 @@ def apply_fault(fault, target, name, param, used=None):
         frac = float(param or FAULT_DEFAULT_PARAM[fault])
         # `used` can be passed in (dose_check measures it once while the service is healthy: right after
         # a previous squeeze the 2-minute average is inflated by the catch-up burst).
-        used = used or prom_scalar(f'sum(rate(container_cpu_usage_seconds_total{{container="{target}"}}[2m]))') or 0.1
+        used = used or prom_scalar(f'sum(rate(container_cpu_usage_seconds_total{{{arcenv.pod_sel(target)}}}[2m]))') or 0.1
         lim = f"{max(SQUEEZE_MIN_M, int(used * 1000 * frac))}m"
         ok, pod = set_cpu_limit(target, lim, request=lim if cpu_millis(lim) < 100 else None)
         return ok, {"kind": "in-place resize", "pod": pod, "cpu_limit": lim, "fraction": frac,
@@ -502,7 +553,7 @@ def apply_fault(fault, target, name, param, used=None):
         base = (loadgen_status() or {}).get("rate_target") or 2.0
         extra = round(base * (mult - 1), 2)
         SURGE_PROC[name] = q = subprocess.Popen(
-            [sys.executable, arcenv.script("loadgen", "loadgen.py"), "--rate", str(extra), "--seed", str(random.randrange(1 << 30)),
+            [sys.executable, arcenv.script(*arcenv.LOADGEN_SCRIPT), "--rate", str(extra), "--seed", str(random.randrange(1 << 30)),
              "--print-every", "60"], stdout=open(os.path.join(arcenv.LOGS, f"{name}.surge.log"), "w"), stderr=subprocess.STDOUT)
         time.sleep(10)
         return q.poll() is None, {"kind": "extra load generator", "multiplier": mult, "base_rate": base, "extra_rate": extra,
@@ -514,7 +565,7 @@ def apply_fault(fault, target, name, param, used=None):
             return False, {"error": f"no Service port for {target}"}
         param = ports[0].get("targetPort") or ports[0]["port"]
     if fault == "call-cut" and not param:
-        q = (f'topk(1, sum by (server) (rate(traces_service_graph_request_total{{client="{target}", server=~"ts-.*", '
+        q = (f'topk(1, sum by (server) (rate(traces_service_graph_request_total{{client="{target}", server=~"{arcenv.SERVICE_SERVER_RE}", '
              f'server!="{target}"}}[5m])))')
         try:
             import urllib.parse, urllib.request
@@ -554,7 +605,7 @@ def remove_fault(fault, name, target=None):
     if fault == "none" or not name:
         return True
     if fault == "cpu-squeeze":
-        ok, _ = set_cpu_limit(target, "2", request="100m")   # a replaced pod already has these from its Deployment
+        ok, _ = set_cpu_limit(target, arcenv.BASE_CPU, request="100m")   # a replaced pod already has these from its Deployment
         return ok
     if fault == "load-surge":
         q = SURGE_PROC.pop(name, None)
@@ -628,13 +679,13 @@ def main():
         meta["load_rate"] = running.get("rate_target")
         log(f"using the running load generator ({running.get('rate_target')} req/s)")
     else:
-        lg = subprocess.Popen([sys.executable, arcenv.script("loadgen", "loadgen.py"), "--rate", str(a.rate),
+        lg = subprocess.Popen([sys.executable, arcenv.script(*arcenv.LOADGEN_SCRIPT), "--rate", str(a.rate),
                                "--seed", str(rng.randrange(1 << 30)), "--print-every", "60"],
                               stdout=open(os.path.join(arcenv.LOGS, f"{ep}.loadgen.log"), "w"), stderr=subprocess.STDOUT)
         log(f"started a load generator at {a.rate} req/s (it stops when the episode ends)")
     try:
         # keep the database at a steady size (18 h of load made every request 5-10x slower)
-        r = subprocess.run(["bash", arcenv.script("ops", "reset-data.sh"), "10"], capture_output=True, text=True)
+        r = subprocess.run(["bash", arcenv.script(*arcenv.RESET_SCRIPT), "10"], capture_output=True, text=True)
         meta["reset_data"] = r.stdout.strip()[-200:]
         log(meta["reset_data"])
         time.sleep(15)

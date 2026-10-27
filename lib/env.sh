@@ -26,7 +26,8 @@ export ARC_CALIB="${ARC_CALIB:-${ARC_DATA_ROOT}/calibration}"    # thresholds, s
 mkdir -p "$ARC_DATA/raw" "$ARC_DATA/loadgen" "$ARC_DATA/logs" "$ARC_CALIB"
 
 export KCTX="kind-${ARC_CLUSTER}"
-export NS="train-ticket"
+export ARC_APP="${ARC_APP:-trainticket}"      # trainticket | boutique (Online Boutique, the second application)
+export NS="train-ticket"; [ "$ARC_APP" = boutique ] && export NS="boutique"
 K="kubectl --context ${KCTX} -n ${NS}"
 KS="kubectl --context ${KCTX} -n kube-system"
 

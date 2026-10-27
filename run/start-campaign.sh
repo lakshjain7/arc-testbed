@@ -13,7 +13,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
 MODE="${1:-}"; SESSION="arc-$ARC_CLUSTER"; LOG="$ARC_DATA/logs/campaign.log"
 command -v tmux >/dev/null || { echo "tmux is missing: sudo apt-get install -y tmux"; exit 1; }
-ENVS="ARC_CLUSTER=$ARC_CLUSTER ARC_INDEX=$ARC_INDEX ARC_DATA_ROOT=$ARC_DATA_ROOT ARC_RATE=${ARC_RATE:-2} ARC_SYNC=${ARC_SYNC:-0} ARC_BACKUP=${ARC_BACKUP:-} ARC_CALIB=$ARC_CALIB ARC_MIX=${ARC_MIX:-core}"
+ENVS="ARC_CLUSTER=$ARC_CLUSTER ARC_INDEX=$ARC_INDEX ARC_DATA_ROOT=$ARC_DATA_ROOT ARC_RATE=${ARC_RATE:-2} ARC_SYNC=${ARC_SYNC:-0} ARC_BACKUP=${ARC_BACKUP:-} ARC_CALIB=$ARC_CALIB ARC_APP=$ARC_APP ARC_MIX=${ARC_MIX:-$([ "$ARC_APP" = boutique ] && echo boutique || echo core)}"
 # ARC_CALIB (which thresholds label the run) and ARC_MIX (which load mix: core | wide) must reach the run itself: a fresh
 # tmux server does not inherit this shell's environment, and a run without them used the default calibration and the core mix
 # (lab, 25 Oct: caught before any episode was recorded).
