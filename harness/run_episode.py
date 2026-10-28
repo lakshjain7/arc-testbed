@@ -303,7 +303,9 @@ def drain_boutique(target, ep):
         if conds.get("AllInjected") == "True":
             return True, {"kind": "NetworkChaos partition", "name": name, "verified_after_s": i}
         time.sleep(1)
-    return False, {"error": "drain partition not AllInjected within 30 s", "conditions": conds}
+    # a partition that never fully injected is still half in place: remove it, or the next episodes fail their gates
+    sh(K + ["delete", "networkchaos", name, "--ignore-not-found", "--wait=false"], check=False)
+    return False, {"error": "drain partition not AllInjected within 30 s", "conditions": conds, "partition_removed": name}
 
 
 _DRAINED = {}   # service -> (ip, port): a disabled instance is HIDDEN from Nacos' list API, so re-enabling
