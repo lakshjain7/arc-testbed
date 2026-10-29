@@ -1,0 +1,5 @@
+{
+  "reason": "paymentservice was left at a 10m CPU limit by a cpu-squeeze reset in ep_main_boutique_b028_6 (scale-up kept the squeezed pod); throttled 0.47-0.63 in every episode below until the stop cleanup at 2026-10-29 02:16 UTC",
+  "episodes": ["ep_main_boutique_b028_7", "ep_main_boutique_b029_1", "ep_main_boutique_b029_2", "ep_main_boutique_b029_3", "ep_main_boutique_b029_4"],
+  "handling": "folders kept untouched; excluded from usable in the Boutique release (v1.1); slots re-run after the main plan"
+}

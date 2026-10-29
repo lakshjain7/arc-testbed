@@ -565,3 +565,13 @@ Why: the main weakness of v1.0 is one system. A second application gives a cross
 - Bugs found by the smoke test and the first calibration: (1) both applications shared one calibration folder (labels used Train Ticket's thresholds); Boutique now has its own. (2) `run_campaign.ensure_load` started the Train Ticket load generator for Boutique, so the first calibration (20 episodes) ran at the episode's own 2 req/s instead of 8; kept as `calibration-boutique-2rps`, repeated at 8 req/s. (3) With 4 req/s, checkout/payment/email had under 30 requests per window ("inconclusive"); load raised to 8 req/s and checkout weight to 20 %.
 - Thresholds: every calibrated T is the 100 ms floor (healthy latencies are about 10 ms), held-out false harm 0/42.
 - Regression: the label change was checked on 6 held-out Train Ticket episodes: identical output before and after.
+
+### 10n. Boutique campaign: second leftover-fault bug (2026-10-29)
+
+Found by the lab's stop rule (two failures in a row at b029_5). `remove_fault("cpu-squeeze")` resized only `pod_of(target)`, the
+first running pod. After a scale-up there are two pods and the scale-down that follows may keep the squeezed one: in b028_6 the
+surviving pod kept a 10m limit, so paymentservice was throttled (0.47-0.63) in b028_7 and b029_1..4 (5 ok episodes) and finally
+crash-looped. Fix: the reset now resizes every running pod of the target (`pods_of`). Same family as the drain bug of 10m
+(a failed drain left its partition); both are "cleanup acted on one object instead of everything the episode could have touched".
+The five episodes are listed in `release/contaminated_boutique.json` (kept, not used); their slots are re-run after the plan.
+Lesson for the paper's threats-to-validity: stateful faults need a post-condition check on the whole cluster state, not only the target.

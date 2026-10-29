@@ -500,12 +500,18 @@ def cpu_millis(v):
     return int(v[:-1]) if v.endswith("m") else int(float(v) * 1000)
 
 
-def set_cpu_limit(target, cpu, request=None):
+def pods_of(svc):
+    """All running pods of a service (a scale-up action leaves two)."""
+    items = json.loads(sh(K + ["get", "pods", "-l", f"app={svc}", "-o", "json"]))["items"]
+    return [p for p in items if p["status"].get("phase") == "Running" and not p["metadata"].get("deletionTimestamp")]
+
+
+def set_cpu_limit(target, cpu, request=None, pod=None):
     """In-place resize of the running pod's CPU limit (Kubernetes >= 1.33, no restart). Returns (ok, pod).
     Uses the DEFAULT (strategic merge) patch: a --type=merge patch replaces the whole resources block and
     is rejected ("limits cannot be removed"). A limit below the request is invalid, so the request is
-    lowered too when needed."""
-    p = pod_of(target)
+    lowered too when needed. `pod` names one pod; by default the first running pod of the service."""
+    p = pod or pod_of(target)
     if not p:
         return False, None
     name = p["metadata"]["name"]
@@ -607,8 +613,11 @@ def remove_fault(fault, name, target=None):
     if fault == "none" or not name:
         return True
     if fault == "cpu-squeeze":
-        ok, _ = set_cpu_limit(target, arcenv.BASE_CPU, request="100m")   # a replaced pod already has these from its Deployment
-        return ok
+        # EVERY running pod of the target: after a scale-up there are two, and the scale-down that follows may
+        # keep the squeezed one (b028_6 left paymentservice at 10m for 5 episodes). A replaced pod already has
+        # the Deployment's limits.
+        oks = [set_cpu_limit(target, arcenv.BASE_CPU, request="100m", pod=q)[0] for q in pods_of(target)]
+        return all(oks) if oks else False
     if fault == "load-surge":
         q = SURGE_PROC.pop(name, None)
         if q and q.poll() is None:
