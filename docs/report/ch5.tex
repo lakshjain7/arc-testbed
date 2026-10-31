@@ -20,7 +20,7 @@ The dataset, with raw telemetry, labels, splits, a datasheet and a loader, is pr
 \begin{itemize}
 \item \textbf{Model:} use temporal telemetry, the age of the fault, the number of replicas and traffic changes as inputs; evaluate calibrated uncertainty intervals (conformal prediction~[25],[26]); predict the distribution of latency rather than a single share.
 \item \textbf{Integration:} connect ARC to a root-cause diagnosis agent and to a remediation executor; optimise the complete tool toward a latency below 50~ms; monitor baseline drift.
-\item \textbf{Data and evaluation:} finish the Online Boutique campaign and release it as version 1.1; run the planned validity tests (dose--response, agreement of independent measurements, call-graph mechanism); test the gate with an agent benchmark such as AIOpsLab [9]; release the dataset on Zenodo and Hugging Face.
+\item \textbf{Data and evaluation:} finish the Online Boutique campaign and release it as version 1.1; run the planned validity tests (dose--response, agreement of independent measurements, call-graph mechanism); use ARC as a guard on public agent benchmarks, for example the Online Boutique incidents of [7] or SREGym [10], and report how much collateral damage the gate removes and how much recovery success it keeps; keep the labels of the held-out part behind a scoring script so that new methods can be compared on an untouched test set; release the dataset on Zenodo and Hugging Face. No public benchmark scores the per-service damage of a repair, which is why these tests are proposed rather than reused.
 \end{itemize}
 
 % ----------------------------------------------------------------
