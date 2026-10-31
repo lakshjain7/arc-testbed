@@ -575,3 +575,12 @@ crash-looped. Fix: the reset now resizes every running pod of the target (`pods_
 (a failed drain left its partition); both are "cleanup acted on one object instead of everything the episode could have touched".
 The five episodes are listed in `release/contaminated_boutique.json` (kept, not used); their slots are re-run after the plan.
 Lesson for the paper's threats-to-validity: stateful faults need a post-condition check on the whole cluster state, not only the target.
+
+### 10o. Boutique campaign finished (2026-10-31 14:14 UTC)
+
+280 plan slots, 283 folders: 277 ok + 3 discarded (b003_5, b014_2: drain not AllInjected; b034_7: fault not verified), each retried automatically
+as `*_r` and ok. The runner refilled the three skipped slots (b003_6, b014_3, b029_5) when the campaign resumed after the fixes (ed31132, c88e9a5).
+58 of 280 saturated before the action (21%), all from network delay and hung pods. Five episodes (b028_7, b029_1..4) ran with paymentservice squeezed
+and are listed in `release/contaminated_boutique.json`; they are kept and excluded. Decision: re-run those five slots as `ep_rerun_boutique_*`
+(extra plan `rerun5`, same fault/level/target/action/seed; b029_5 is already clean). They replace the contaminated ones in v1.1.
+Backup on the lab machine: arc-data-boutique-main-2026-10-31.tar.gz (75.5 MB, sha256 11f1e87b...b924c), verified there.
