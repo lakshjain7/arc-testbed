@@ -1,0 +1,59 @@
+% ----------------------------------------------------------------
+\chapter{Conclusion}
+\section{Conclusion}
+Automated remediation tools decide whether to act from their confidence in a diagnosis, and nothing tells them what the action will cost the services around its target. ARC fills this gap. We built a repeatable testbed, recorded 1,795 controlled incidents on the Train Ticket application with all six remediation actions applied to each fault condition, and labelled each service by the rise in its share of failed or slow requests, computed from exact request counters. A three-layer graph network over the call graph, combined with a tree model, predicts this damage before the action is applied.
+
+The model cuts the prediction error roughly in half against the best baseline in every test: 1.98 against 3.86 percentage points on new incidents, 2.86 against 3.91 on an unseen system, 1.86 against 2.61 on an unseen fault, and 2.78 against 4.11 at twice the load. It names the most damaged service in 78\% of incidents, ranks 86\% of action pairs correctly, explains the blast radius with a hit-set F1 of 0.74, and drives a gate that blocks 1.6\% of safe actions and detects 84\% of harmful ones. Scoring all six actions takes about 25~ms, so an agent can ask before every action. The disagreement of the five model copies is a useful warning: the episodes with the highest disagreement have several times the error.
+
+The dataset, with raw telemetry, labels, splits, a datasheet and a loader, is prepared for open release, and a second application, Online Boutique, has been used to test whether the pipeline carries over.
+
+\section{Limitations}
+\begin{itemize}
+\item The evaluation covers one main application on one machine, with one copy of each service. A second application is under evaluation and is a replication with stated limits.
+\item Generalisation to new kinds of incident is still weak: over all held-out episodes the error (7.57) is level with the best baseline (7.51), and it reaches 22.16 under a four-times traffic surge, which has no failing component.
+\item The trees rank all services better than ARC (Spearman 0.75 against 0.68), and some action rankings change with the latency bar.
+\item Labels average over 180~s, so bursts of a few seconds are not seen, and labels measure what users see, not whether an operator would consider the rise important.
+\item Saturated episodes (389 of 1,795) and the drift in the second half of wide2 need care when the data is reused.
+\end{itemize}
+
+\section{Future Work}
+\begin{itemize}
+\item \textbf{Model:} use temporal telemetry, the age of the fault, the number of replicas and traffic changes as inputs; evaluate calibrated uncertainty intervals (conformal prediction~[25],[26]); predict the distribution of latency rather than a single share.
+\item \textbf{Integration:} connect ARC to a root-cause diagnosis agent and to a remediation executor; optimise the complete tool toward a latency below 50~ms; monitor baseline drift.
+\item \textbf{Data and evaluation:} finish the Online Boutique campaign and release it as version 1.1; run the planned validity tests (dose--response, agreement of independent measurements, call-graph mechanism); test the gate with an agent benchmark such as AIOpsLab [9]; release the dataset on Zenodo and Hugging Face.
+\end{itemize}
+
+% ----------------------------------------------------------------
+\begin{thebibliography}{99}
+\addcontentsline{toc}{chapter}{References}
+\setlength{\itemsep}{2pt}
+\small
+\bibitem{r1} C. Dai, Z. Yan, C. Lei, Q. Li, L. Zhang, ``Safe Remediation as Risk-Constrained Intervention Decision in Microservice Systems,'' arXiv:2607.20005, 2026.
+\bibitem{r2} W. Cai et al., ``Can AI Remediate Backend Failures Safely? GuardedAct with Blast-Radius-Aware Sandboxing,'' arXiv:2609.11264, 2026.
+\bibitem{r3} L. Bindschaedler, ``Rebooting Microreboot: Architectural Support for Safe, Parallel Recovery in Microservice Systems,'' Proc. ARCS, 2026. arXiv:2604.09963.
+\bibitem{r4} L. Zhang et al., ``MicroRemed: Benchmarking LLMs in Microservices Remediation,'' arXiv:2511.01166, 2025.
+\bibitem{r5} L. Zhang et al., ``E2E-REME: Towards End-to-End Microservices Auto-Remediation via Experience-Simulation Reinforcement Fine-Tuning,'' FSE 2026. arXiv:2604.11094.
+\bibitem{r6} A. Malik, ``Autonomous Incident Resolution at Hyperscale: An Agentic AI Architecture for Network Operations,'' arXiv:2606.09122, 2026.
+\bibitem{r7} J. Qi et al., ``Can LLMs Really Recover Microservice Failures? A Recovery-Aware Evaluation of Diagnosis-to-Action Reasoning,'' arXiv:2607.04623, 2026.
+\bibitem{r8} S. Fatima et al., ``CRRL: A Causality-Based Reinforcement Learning Framework for Autonomous System Recovery,'' arXiv:2607.03177, 2026.
+\bibitem{r9} Y. Chen et al., ``AIOpsLab: A Holistic Framework to Evaluate AI Agents for Enabling Autonomous Clouds,'' arXiv:2501.06706, 2025.
+\bibitem{r10} J. Clark et al., ``SREGym: A Live Benchmark for AI SRE Agents with High-Fidelity Failure Scenarios,'' arXiv:2605.07161, 2026.
+\bibitem{r11} Y. Chen et al., ``STRATUS: A Multi-agent System for Autonomous Reliability Engineering of Modern Clouds,'' arXiv:2506.02009, 2025.
+\bibitem{r12} X. Zhang, Q. Wang, M. Li, Y. Yuan, M. Xiao, F. Zhuang, D. Yu, ``TAMO: Fine-Grained Root Cause Analysis via Tool-Assisted LLM Agent with Multi-Modality Observation Data in Cloud-Native Systems,'' IEEE Trans. Services Computing, 2025. arXiv:2504.20462.
+\bibitem{r13} L. Pham, H. Zhang, H. Ha, F. Salim, X. Zhang, ``RCAEval: A Benchmark for Root Cause Analysis of Microservice Systems with Telemetry Data,'' arXiv:2412.17015, 2024.
+\bibitem{r14} A. Fang et al., ``Rethinking the Evaluation of Microservice RCA with a Fault Propagation-Aware Benchmark,'' FSE 2026. arXiv:2510.04711.
+\bibitem{r15} F. Gao et al., ``Are GNNs Actually Effective for Multimodal Fault Diagnosis in Microservice Systems?,'' arXiv:2501.02766, 2025.
+\bibitem{r16} I. Bulji\'{c}, ``Does Graph Structure Earn Its Place in Microservice Root-Cause Analysis? A Controlled Study on RCAEval,'' arXiv:2609.27069, 2026.
+\bibitem{r17} Y. Gan et al., ``Sage: Leveraging ML to Diagnose Unpredictable Performance in Cloud Microservices,'' arXiv:2112.06263, 2021.
+\bibitem{r18} S. Zhang et al., ``Failure Diagnosis in Microservice Systems: A Comprehensive Survey and Analysis,'' arXiv:2407.01710, 2024.
+\bibitem{r19} L. Nagalapatti et al., ``Robust Root Cause Diagnosis using In-Distribution Interventions,'' ICLR 2025. arXiv:2505.00930.
+\bibitem{r20} X. Zhou et al., ``Fault Analysis and Debugging of Microservice Systems: Industrial Survey, Benchmark System, and Empirical Study,'' IEEE Trans. Software Eng., vol. 47, no. 2, pp. 243--260, 2021 (Train Ticket).
+\bibitem{r21} A. Basiri et al., ``Automating Chaos Experiments in Production,'' ICSE-SEIP, 2019. arXiv:1905.04648.
+\bibitem{r22} Chaos Mesh, a cloud-native chaos engineering platform for Kubernetes, \url{https://chaos-mesh.org}.
+\bibitem{r23} S. Smith et al., ``Benchmarks for End-to-End Microservices Testing,'' IEEE SOSE, 2023. arXiv:2306.05895.
+\bibitem{r24} Y. Feng et al., ``CORA: Conformal Risk-Controlled Agents for Safeguarded Mobile GUI Automation,'' arXiv:2604.09155, 2026.
+\bibitem{r25} J. Lekeufack, A. N. Angelopoulos, A. Bajcsy, M. I. Jordan, J. Malik, ``Conformal Decision Theory: Safe Autonomous Decisions from Imperfect Predictions,'' ICRA 2024. arXiv:2310.05921.
+\bibitem{r26} A. N. Angelopoulos, S. Bates, ``A Gentle Introduction to Conformal Prediction and Distribution-Free Uncertainty Quantification,'' arXiv:2107.07511, 2021.
+\end{thebibliography}
+
+\end{document}

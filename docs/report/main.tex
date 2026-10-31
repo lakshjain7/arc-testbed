@@ -1,0 +1,261 @@
+\documentclass[12pt,a4paper]{report}
+\usepackage[a4paper,left=2.9cm,right=2.9cm,top=2.6cm,bottom=2.6cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,array,tabularx}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage[font=small]{caption}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage[hidelinks,pageanchor=false]{hyperref}
+
+\setlist{itemsep=2pt,topsep=4pt}
+\setlength{\parindent}{1.0cm}
+\setlength{\parskip}{3pt}
+\linespread{1.12}
+\captionsetup{labelsep=colon}
+\graphicspath{{fig/}}
+
+% chapter and section styles close to the department template
+\titleformat{\chapter}[display]{\normalfont\bfseries\centering}{\Large Chapter \thechapter}{14pt}{\Large\MakeUppercase}
+\titlespacing*{\chapter}{0pt}{20pt}{30pt}
+\titleformat{\section}{\normalfont\sffamily\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\sffamily\large\bfseries}{\thesubsection}{1em}{}
+
+\usepackage{soul}
+\sethlcolor{yellow}
+\newcommand{\todo}[1]{\hl{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\pp}{\,pp}
+\renewcommand{\bibname}{References}
+
+\begin{document}
+
+% ---------------------------------------------------------------- cover
+\pagestyle{empty}
+\begin{center}
+\vspace*{1.6cm}
+{\large\bfseries MAJOR PROJECT REPORT}\\[10pt]
+on\\[14pt]
+{\LARGE\bfseries Action Risk Calibrated Remediation:\\[4pt] A Benchmark and Graph Model for\\[4pt] Predicting the Blast Radius of Automated\\[4pt] Remediation in Microservices}\\[26pt]
+Submitted in partial fulfilment for the Award of Degree of\\[20pt]
+{\large\bfseries BACHELOR OF ENGINEERING}\\[6pt]
+{\large\bfseries IN}\\[6pt]
+{\large\bfseries INFORMATION TECHNOLOGY}\\[24pt]
+{\bfseries BY}\\[8pt]
+ABHISHEK KUMAR SINGH (160123737094)\\
+LAKSH JAIN (160123737120)\\
+YOGESH CHOUDHARY (160123737125)\\[22pt]
+Under the guidance of\\[8pt]
+{\bfseries Dr. RAMAKRISHNA KOLIKIPOGU}\\
+Professor\\[24pt]
+{\bfseries DEPARTMENT OF INFORMATION TECHNOLOGY}\\[4pt]
+{\bfseries CHAITANYA BHARATHI INSTITUTE OF TECHNOLOGY (A)}\\[4pt]
+{\small (Affiliated to Osmania University; Accredited by NBA (AICTE) and NAAC (UGC),\\
+ISO Certified 9001:2015), Kokapet (V), Gandipet (M), Hyderabad -- 500 075}\\
+{\small Website: \texttt{https://www.cbit.ac.in}}\\[14pt]
+2026--2027
+\end{center}
+\newpage
+
+% ---------------------------------------------------------------- front matter
+\pagenumbering{roman}
+\pagestyle{plain}
+
+\chapter*{Certificate}
+\thispagestyle{plain}
+\vspace{-6pt}
+This is to certify that the major project report entitled \textquotedblleft Action Risk Calibrated Remediation: A Benchmark and Graph Model for Predicting the Blast Radius of Automated Remediation in Microservices\textquotedblright{} submitted to Chaitanya Bharathi Institute of Technology, in partial fulfilment of the requirements for the award of degree of B.E. (Information Technology) during the academic year 2026--27 is a record of original work carried out by Abhishek Kumar Singh (160123737094), Laksh Jain (160123737120) and Yogesh Choudhary (160123737125) during the period of study in the Department of Information Technology, CBIT, Hyderabad.
+
+\vspace{3.2cm}
+\noindent
+\begin{tabular}{@{}p{7.2cm}p{7cm}@{}}
+\textbf{Project Guide} & \textbf{Head of the Department}\\
+Dr. Ramakrishna Kolikipogu & \todo{Dr. M. Venu Gopalachari}\\
+Professor, IT Dept. & Professor, IT Dept.\\
+CBIT, Hyderabad. & CBIT, Hyderabad.
+\end{tabular}
+\newpage
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+Automated incident-response tools for microservice systems restart, scale or drain a service to restore normal operation, and they decide whether to act by how confident they are about the root cause. Confidence says nothing about what the chosen action will cost: the action changes the traffic and load of the services around its target, and services that were healthy can start to fail or slow down. This report presents ARC (Action Risk Calibrated Remediation), a benchmark and a graph model that predict, before an action is applied, how much each service will be damaged by it. Damage is measured as the rise in the share of a service's requests that fail or become slow, over the 180 seconds after the action. We built a Kubernetes testbed with the Train Ticket application, injected faults, applied six remediation actions and recorded 1,795 controlled incidents, each labelled per service from exact request counters. A three-layer message-passing network over the service call graph, trained on the state of every service in the 60 seconds before the action, cuts the prediction error roughly in half against the best baseline in every test: 1.98 against 3.86 percentage points on new incidents of the same system, 2.86 against 3.91 on an unseen system, and 1.86 against 2.61 on an unseen fault. It names the most damaged service in 78\% of incidents, scores all six candidate actions in about 25 ms, and drives a block, ask or allow gate that blocks 1.6\% of safe actions and detects 84\% of harmful ones. The model does not yet predict faults of a new kind, such as a four-times traffic surge, and these limits are reported. The dataset is prepared for open release.
+
+\vspace{6pt}
+\noindent\textbf{Index Terms}---AIOps, automated remediation, microservices, blast radius, graph neural networks, fault injection, benchmark dataset.
+\newpage
+
+\tableofcontents
+\newpage
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+\newpage
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+\clearpage
+
+% ---------------------------------------------------------------- body
+\pagenumbering{arabic}
+
+\chapter{Introduction}
+\section{Overview}
+Modern online services are built from many small programs called microservices. A user request, for example booking a train ticket, passes through a chain of services, and each one calls others. The map of which service calls which is the \emph{call graph}. When one service fails or slows down, tools that watch the system, often called AIOps tools, try to repair it automatically. The common repairs are to restart the service, to start more copies of it, to give it more CPU, or to take it out of rotation (drain it). Recent systems use large language models or learned diagnosers to find the root cause of the incident and to choose the repair~[12],[4].
+
+These tools decide to act on how confident they are about the diagnosis. That confidence says nothing about what the repair will cost. Restarting one service stops the traffic it was serving; the services that call it see errors, and the services it calls suddenly receive fewer requests. A service that was healthy before the repair can therefore fail or slow down because of it. In an experiment on the Train Ticket application, restarting a single service after a network delay raised the share of failed or slow requests in several other services (Chapter~4).
+
+This project addresses the missing step: predicting, before an action is applied, how much damage it will cause to each service. We call the system \textbf{ARC} (Action Risk Calibrated Remediation). ARC reads the recent state of every service, the call graph and the candidate action, and answers in milliseconds. This report describes the testbed we built, the dataset of 1,795 controlled incidents we recorded and labelled, the graph model that predicts the damage, the explanation and decision layers on top of it, and the evaluation.
+
+\noindent This project can be used to:
+\begin{itemize}
+\item \textbf{Check an action before it runs:} an agent or an on-call engineer asks ARC what a restart, scale-up or drain would do to every service, and receives a block, ask or allow recommendation.
+\item \textbf{Choose the safest repair:} the same incident is scored for each of six candidate actions, and the one with the lowest predicted damage is suggested.
+\item \textbf{Explain the blast radius:} ARC shows which services will be hit, by how much, and through which call path.
+\item \textbf{Benchmark new methods:} the released dataset gives researchers per-service damage labels and raw telemetry, which no existing public dataset records.
+\end{itemize}
+
+\section{Problem Definition}
+Autonomous remediation tools do not predict the consequences of the actions they choose. The problem is to predict this damage before the action is applied. Given the state $s$ of every service during the 60~seconds before the action, the call graph $G$, and a candidate action $a$ with its target service, the model $f$ must output for every service $i$ the predicted rise $\hat{y}_i$ of the share of its requests that fail or become slow during the next 180~seconds:
+\[
+f(G, s, a) \rightarrow \hat{y} = (\hat{y}_1, \ldots, \hat{y}_n),
+\]
+where $n$ is the number of services and $\hat{y}_i$ is measured in percentage points. The prediction must not use knowledge of the fault, must be fast enough for an agent to ask before every action, and must still hold on a system, a load and a fault type it was not trained on.
+
+\section{Aim of the Project}
+To develop and evaluate a learned model that predicts the per-service damage of automated remediation actions before they are applied, and to release a measured dataset that makes such models possible to build and compare. The objectives are:
+\begin{enumerate}
+\item to build a repeatable testbed that injects faults, applies remediation actions and records telemetry unattended;
+\item to define a damage label that is measured from exact request counts and is robust to the choice of latency threshold;
+\item to record a large, balanced dataset of incidents with all six actions applied to each fault condition;
+\item to train a graph model and compare it with simple, tree-based and LLM-based baselines on new incidents, a new system, a new fault, a higher load and repeated incidents;
+\item to add an explanation of the blast radius, a ranking of actions and a decision gate; and
+\item to report the limits of the approach honestly, including the cases it does not predict.
+\end{enumerate}
+
+% ----------------------------------------------------------------
+\chapter{Literature Survey}
+This chapter reviews the work closest to ours. Each entry gives the title, authors and venue, what the work does, and what it leaves open for this project. The works are grouped in our references at the end of the report.
+
+\section{Paper 1}
+\noindent\textbf{Title:} TAMO: Fine-Grained Root Cause Analysis via Tool-Assisted LLM Agent with Multi-Modality Observation Data in Cloud-Native Systems\\
+\textbf{Authors:} X. Zhang, Q. Wang, M. Li, Y. Yuan, M. Xiao, F. Zhuang, D. Yu\\
+\textbf{Publisher:} IEEE Transactions on Services Computing, 2025 [12]\\
+\textbf{Description:} The paper uses a tool-assisted large language model agent that reads metrics, logs and traces to localise the root cause of an incident and to classify the fault. It is the base paper of this project.\\
+\textbf{Gaps:} It finds what failed but does not predict what a repair will do to the other services. Per-service damage of remediation is outside its scope.
+
+\section{Paper 2}
+\noindent\textbf{Title:} RCAEval: A Benchmark for Root Cause Analysis of Microservice Systems with Telemetry Data\\
+\textbf{Authors:} L. Pham, H. Zhang, H. Ha, F. Salim, X. Zhang\\
+\textbf{Publisher:} WWW 2025; arXiv:2412.17015 [13]\\
+\textbf{Description:} A benchmark of 735 failure cases from three microservice systems, with 15 baseline root-cause methods, covering metrics, logs and traces.\\
+\textbf{Gaps:} It records faults and their root causes, not the consequences of repairs. It cannot be used to learn what an action does to the neighbouring services.
+
+\section{Paper 3}
+\noindent\textbf{Title:} MicroRemed: Benchmarking LLMs in Microservices Remediation\\
+\textbf{Authors:} L. Zhang et al.\\
+\textbf{Publisher:} arXiv:2511.01166, 2025 [4]\\
+\textbf{Description:} A benchmark for language models that write executable remediation playbooks from a diagnosis, together with a multi-agent method (ThinkRemed).\\
+\textbf{Gaps:} The focus is generating repairs. It does not predict the per-service impact of a repair before it is run.
+
+\section{Paper 4}
+\noindent\textbf{Title:} Safe Remediation as Risk-Constrained Intervention Decision in Microservice Systems\\
+\textbf{Authors:} C. Dai, Z. Yan, C. Lei, Q. Li, L. Zhang\\
+\textbf{Publisher:} arXiv:2607.20005, 2026 [1]\\
+\textbf{Description:} Safe remediation is treated as a risk-constrained decision. Risk combines blast radius, reversibility and uncertainty, and a human-in-the-loop gate approves risky actions. The authors report 1,664 events and 8,320 decision records on Train Ticket, a 39\% lower false-remediation rate and 17\% fewer on-call escalations.\\
+\textbf{Gaps:} Labels are per decision (resolved, partial or false remediation), not the damage to each service. We found no public code or data.
+
+\section{Paper 5}
+\noindent\textbf{Title:} Can AI Remediate Backend Failures Safely? GuardedAct with Blast-Radius-Aware Sandboxing\\
+\textbf{Authors:} W. Cai et al.\\
+\textbf{Publisher:} arXiv:2609.11264, 2026 [2]\\
+\textbf{Description:} A language model proposes actions, a digital-twin sandbox estimates their blast radius, and a rollback-confidence gate decides. On DeathStarBench the authors report an 87.4\% recovery rate and collateral damage falling from 25.6\% to 5.2\%, with about 8 s of added recovery time.\\
+\textbf{Gaps:} Simulation adds delay to every decision. ARC targets a fast learned prediction (about 4 ms per action) rather than a sandbox run.
+
+\section{Paper 6}
+\noindent\textbf{Title:} Autonomous Incident Resolution at Hyperscale: An Agentic AI Architecture for Network Operations\\
+\textbf{Authors:} A. Malik\\
+\textbf{Publisher:} arXiv:2606.09122, 2026 [6]\\
+\textbf{Description:} A multi-agent architecture with graduated autonomy, deployed at a major cloud provider, in which more than 90\% of common incidents are resolved autonomously.\\
+\textbf{Gaps:} No model of the consequences of individual actions on other components is reported.
+
+\section{Paper 7}
+\noindent\textbf{Title:} AIOpsLab: A Holistic Framework to Evaluate AI Agents for Enabling Autonomous Clouds\\
+\textbf{Authors:} Y. Chen et al.\\
+\textbf{Publisher:} arXiv:2501.06706, 2025 [9]\\
+\textbf{Description:} A framework for evaluating AI agents on cloud operations tasks, with injected faults and an agent--cloud interface.\\
+\textbf{Gaps:} It scores whether an agent solves the task. It does not measure, per service, how much collateral damage the agent's actions cause.
+
+\section{Summary of the Gap}
+Table~\ref{tab:gap} summarises what each line of work provides. None of them offers a learned, per-service prediction of the damage of a repair, trained on a released dataset of measured repair outcomes.
+
+\begin{table}[H]
+\centering
+\caption{What related work provides and what ARC adds.}
+\label{tab:gap}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.1cm}XXXX}
+\toprule
+Work & Finds root cause & Generates repair & Estimates repair risk & Per-service damage prediction \\
+\midrule
+TAMO [12] & yes & -- & -- & -- \\
+RCAEval [13] & dataset only & -- & -- & -- \\
+MicroRemed [4] & -- & yes & -- & -- \\
+Dai et al. [1] & -- & -- & per decision & -- \\
+GuardedAct [2] & -- & yes & sandbox (slow) & estimated in sandbox \\
+\textbf{ARC (this work)} & -- & -- & learned, 4 ms per action & \textbf{yes, with released data} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ----------------------------------------------------------------
+\chapter{System Requirement Specification}
+\section{Functional Requirements}
+\begin{enumerate}
+\item The system must run a controlled incident unattended: check that the cluster is healthy, record a baseline, inject a fault, wait, apply one remediation action, measure, and store the result.
+\item The system must support nine fault types (no fault, pod-kill, hung pod, network delay, packet loss, CPU squeeze, database delay, call cut and load surge) and six actions (no-op, restart-pod, rollout-restart, scale-up, cpu-bump and drain).
+\item The system must plan campaigns in advance in blocks of seven episodes (one fault condition, one episode per action, no-op twice) so that action effects can be compared within the same kind of incident.
+\item The system must record, for every episode, per-service request rates, errors, latency percentiles, CPU, memory and readiness every 5 seconds, the call graph with its failed calls, and every request the load generator sent.
+\item The system must compute, for every service, the share of bad requests before and after the action, and the damage labels (mean, peak and recovery time), from exact request counters.
+\item The system must calibrate the latency bar that defines a slow request on healthy episodes only, and check it on healthy episodes that were not used to fit it.
+\item The system must flag episodes that were already saturated before the action, episodes with a machine stall, and services with too few requests to score.
+\item The model must predict, for every service, the damage of a candidate action using only information available before the action.
+\item The system must score all six candidate actions for one incident and recommend the one with the lowest predicted net damage.
+\item The system must explain the blast radius: which services are hit, by how much, and through which call path from the target.
+\item The system must return a block, ask or allow decision, using the predicted damage and the disagreement between model copies.
+\item The system must clean up after every episode (faults, partitions, resized pods, scaled replicas) and stop safely after repeated failures.
+\item The system must export every episode in an open format and provide a loader and checksums so that the dataset can be reused.
+\end{enumerate}
+
+\section{Non-Functional Requirements}
+\subsection{Speed and Memory Requirements}
+A prediction must be fast enough for an agent to ask before every action. The graph model scores one action in about 4~ms and all six candidate actions in about 25~ms on a CPU. The complete tool, with five model copies, the tree blend and the explanation, takes about 350~ms and has not been optimised. Data collection is slower by design: one episode takes about 9 minutes and a campaign of several hundred episodes runs for days. The model itself is small (hidden vectors of 64 numbers) and needs no GPU for prediction.
+
+\subsection{Usability Requirements}
+An engineer or an agent must be able to ask ARC about an incident with one command and receive a short, readable answer: the decision, the predicted damage per service and the call chain behind it. A live viewer shows the state of the cluster and the call graph so that a campaign can be supervised. The released dataset has a datasheet, a schema description and a loader so that it can be used without knowing the testbed.
+
+\subsection{Reliability and Reproducibility Requirements}
+Campaigns must run unattended for days. The runner therefore checks the health of the cluster before every episode, repeats or discards an episode that fails its checks, stops after two failures in a row, and guards disk space. Plans are fixed before a campaign starts and every decision that changes the method is written in a decision log.
+
+\section{Software Requirements}
+\begin{itemize}
+\item \textbf{Operating System:} Linux for the lab machine; Windows 11 with WSL2 for development.
+\item \textbf{Containers and cluster:} Docker, Kubernetes 1.34 (kind).
+\item \textbf{Applications under test:} Train Ticket (20 to 25 services) and Online Boutique (11 services plus a cache).
+\item \textbf{Fault injection:} Chaos Mesh 2.6.3, with in-place pod resizing for the CPU squeeze.
+\item \textbf{Telemetry:} OpenTelemetry Collector (span metrics and service graph), Prometheus (5 s resolution), cAdvisor, kube-state-metrics, Grafana.
+\item \textbf{Languages and libraries:} Python 3, NumPy, PyTorch, shell scripts.
+\item \textbf{Version control and release:} Git and GitHub for code; Zenodo and Hugging Face for the dataset.
+\end{itemize}
+
+\section{Hardware Requirements}
+\begin{itemize}
+\item \textbf{Data collection:} one workstation with an Intel Core i9-13900 processor (20 cores) and 32~GB of memory runs the whole cluster, the load generator and the telemetry stack; tens of gigabytes of free disk space for container images and metrics.
+\item \textbf{Modelling:} a laptop is enough; training and prediction run on the CPU.
+\item \textbf{Prediction at run time:} a single CPU core.
+\end{itemize}
+
+\input{ch4}
+\input{ch5}
