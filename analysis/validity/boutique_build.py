@@ -20,8 +20,8 @@ for d in sorted(glob.glob(ROOT + "boutique/raw/*")):
     m = json.load(open(d + "/meta.json"))
     lp = d + "/labels_v2.json"
     lab = json.load(open(lp)) if os.path.exists(lp) else None
-    mm = re.match(r"ep_(main|cal)_boutique_(?:b(\d+)_(\d+))?(_r)?$", eid)
-    kind = "campaign" if eid.startswith("ep_main") else "calibration"
+    mm = re.match(r"ep_(main|cal|rerun)_boutique_(?:b(\d+)_(\d+))?(_r)?$", eid)
+    kind = "campaign" if eid.startswith(("ep_main", "ep_rerun")) else "calibration"
     block = int(mm.group(2)) if mm and mm.group(2) else None
     pos = int(mm.group(3)) if mm and mm.group(3) else None
     ok = m.get("status") == "ok"
