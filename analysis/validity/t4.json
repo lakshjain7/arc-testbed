@@ -1,0 +1,202 @@
+[
+ {
+  "action": "drain",
+  "table": [
+   {
+    "role": "callee",
+    "rows": 1088,
+    "mean_excess": 0.163,
+    "harm_rate": 0.001,
+    "share_gt5": 0.011
+   },
+   {
+    "role": "caller (2+ hops)",
+    "rows": 178,
+    "mean_excess": 68.304,
+    "harm_rate": 0.961,
+    "share_gt5": 0.961
+   },
+   {
+    "role": "caller (direct)",
+    "rows": 388,
+    "mean_excess": 66.382,
+    "harm_rate": 0.956,
+    "share_gt5": 0.972
+   },
+   {
+    "role": "target",
+    "rows": 138,
+    "mean_excess": -0.749,
+    "harm_rate": 0.0,
+    "share_gt5": 0.036
+   },
+   {
+    "role": "unrelated",
+    "rows": 1186,
+    "mean_excess": -0.344,
+    "harm_rate": 0.003,
+    "share_gt5": 0.013
+   }
+  ]
+ },
+ {
+  "action": "restart-pod",
+  "table": [
+   {
+    "role": "callee",
+    "rows": 1201,
+    "mean_excess": 0.047,
+    "harm_rate": 0.0,
+    "share_gt5": 0.004
+   },
+   {
+    "role": "caller (2+ hops)",
+    "rows": 174,
+    "mean_excess": 48.783,
+    "harm_rate": 0.943,
+    "share_gt5": 0.914
+   },
+   {
+    "role": "caller (direct)",
+    "rows": 404,
+    "mean_excess": 27.537,
+    "harm_rate": 0.663,
+    "share_gt5": 0.577
+   },
+   {
+    "role": "target",
+    "rows": 186,
+    "mean_excess": -1.556,
+    "harm_rate": 0.091,
+    "share_gt5": 0.113
+   },
+   {
+    "role": "unrelated",
+    "rows": 1278,
+    "mean_excess": 0.608,
+    "harm_rate": 0.024,
+    "share_gt5": 0.026
+   }
+  ]
+ },
+ {
+  "action": "rollout-restart",
+  "table": [
+   {
+    "role": "callee",
+    "rows": 981,
+    "mean_excess": 0.07,
+    "harm_rate": 0.002,
+    "share_gt5": 0.003
+   },
+   {
+    "role": "caller (2+ hops)",
+    "rows": 235,
+    "mean_excess": 24.107,
+    "harm_rate": 0.821,
+    "share_gt5": 0.804
+   },
+   {
+    "role": "caller (direct)",
+    "rows": 373,
+    "mean_excess": 9.611,
+    "harm_rate": 0.437,
+    "share_gt5": 0.402
+   },
+   {
+    "role": "target",
+    "rows": 188,
+    "mean_excess": -0.682,
+    "harm_rate": 0.005,
+    "share_gt5": 0.027
+   },
+   {
+    "role": "unrelated",
+    "rows": 1448,
+    "mean_excess": -0.153,
+    "harm_rate": 0.01,
+    "share_gt5": 0.012
+   }
+  ]
+ },
+ {
+  "action": "scale-up",
+  "table": [
+   {
+    "role": "callee",
+    "rows": 1139,
+    "mean_excess": 0.147,
+    "harm_rate": 0.005,
+    "share_gt5": 0.012
+   },
+   {
+    "role": "caller (2+ hops)",
+    "rows": 190,
+    "mean_excess": 0.306,
+    "harm_rate": 0.084,
+    "share_gt5": 0.121
+   },
+   {
+    "role": "caller (direct)",
+    "rows": 379,
+    "mean_excess": 0.633,
+    "harm_rate": 0.095,
+    "share_gt5": 0.156
+   },
+   {
+    "role": "target",
+    "rows": 182,
+    "mean_excess": -0.224,
+    "harm_rate": 0.06,
+    "share_gt5": 0.082
+   },
+   {
+    "role": "unrelated",
+    "rows": 1299,
+    "mean_excess": 0.335,
+    "harm_rate": 0.018,
+    "share_gt5": 0.02
+   }
+  ]
+ },
+ {
+  "action": "cpu-bump",
+  "table": [
+   {
+    "role": "callee",
+    "rows": 1239,
+    "mean_excess": 0.219,
+    "harm_rate": 0.006,
+    "share_gt5": 0.01
+   },
+   {
+    "role": "caller (2+ hops)",
+    "rows": 167,
+    "mean_excess": -1.078,
+    "harm_rate": 0.06,
+    "share_gt5": 0.126
+   },
+   {
+    "role": "caller (direct)",
+    "rows": 363,
+    "mean_excess": -1.949,
+    "harm_rate": 0.033,
+    "share_gt5": 0.077
+   },
+   {
+    "role": "target",
+    "rows": 181,
+    "mean_excess": -0.655,
+    "harm_rate": 0.028,
+    "share_gt5": 0.044
+   },
+   {
+    "role": "unrelated",
+    "rows": 1252,
+    "mean_excess": 0.03,
+    "harm_rate": 0.011,
+    "share_gt5": 0.018
+   }
+  ]
+ }
+]
