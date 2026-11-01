@@ -1,9 +1,11 @@
-"""Loader for the ARC dataset v1.0. Standard library only; pandas is used when you ask for it.
+"""Loader for the ARC dataset v1.1 (Train Ticket and Online Boutique). Standard library only; pandas is used when you ask for it.
 
     import arc_data as arc
     eps = arc.load_episodes()                        # list of dicts
     df  = arc.load_service_labels(pandas=True)       # DataFrame
     ids = arc.episode_ids(protocol="unseen_system", role="train")
+    boutique = arc.by_system(eps, "online-boutique")          # any table: filter by the `system` column
+    ids = arc.episode_ids("train_tt_test_boutique", "test")   # train on Train Ticket, test on Online Boutique
 
     # raw files of one episode, after extracting its part's archive into ./raw_data
     ep = arc.load_episode("ep_held_arc_b001_1", root="raw_data")     # {"services": [...], "edges": [...], ...}
@@ -13,9 +15,11 @@ Tables are looked up next to this file, or in the folder given by `root` / the e
 import csv, gzip, json, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PROTOCOLS = ("in_system", "unseen_system", "unseen_fault", "held_out_faults", "higher_load", "noise_ceiling")
+PROTOCOLS = ("in_system", "unseen_system", "unseen_fault", "held_out_faults", "higher_load", "noise_ceiling",
+             "in_system_boutique", "train_tt_test_boutique", "train_boutique_test_tt")
+SYSTEMS = ("train-ticket", "online-boutique")
 _NUMERIC_HINT = ("n_", "p_", "y_", "bad_", "delay", "load_rate", "block", "position", "is_", "usable", "saturated", "stalled",
-                 "t_recover", "recovered", "user_damage", "collateral", "action_on", "healthy")
+                 "t_recover", "recovered", "user_damage", "collateral", "action_on", "healthy", "contaminated", "wide2")
 
 
 def _dir(root):
@@ -61,7 +65,7 @@ def load_client_flows(root=None, pandas=False):
 
 
 def load_splits(root=None, pandas=False):
-    """Columns: episode_id, part, then one column per protocol holding 'train', 'test', 'repeat' or ''."""
+    """Columns: episode_id, part, system, then one column per protocol holding 'train', 'test', 'repeat' or ''."""
     return _read("splits", root, pandas)
 
 
@@ -70,6 +74,13 @@ def episode_ids(protocol, role, root=None):
     if protocol not in PROTOCOLS:
         raise ValueError(f"protocol must be one of {PROTOCOLS}")
     return [r["episode_id"] for r in load_splits(root) if r.get(protocol) == role]
+
+
+def by_system(rows, system):
+    """Rows of one system: 'train-ticket' or 'online-boutique' (column `system`, present in every table)."""
+    if system not in SYSTEMS:
+        raise ValueError(f"system must be one of {SYSTEMS}")
+    return [r for r in rows if r.get("system") == system]
 
 
 def scored(rows, min_requests=30):

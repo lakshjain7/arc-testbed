@@ -17,7 +17,7 @@ import argparse, csv, gzip, hashlib, io, json, os, re, shutil, sys, tarfile, tim
 from collections import Counter, defaultdict
 
 PLAN_RE = re.compile(r"ep_(?P<plan>.+?)_(?P<cluster>arc\d*|boutique)_b(?P<block>\d+)_(?P<pos>\d+)(?P<redo>_r)?$")
-CAMPAIGN_PLANS = {"main", "main2", "wide1", "wide1db", "wide2", "held"}
+CAMPAIGN_PLANS = {"main", "main2", "wide1", "wide1db", "wide2", "held", "rerun"}
 REPTEST_RE = re.compile(r"ep_rep")                    # the repeatability recipes
 SCRUB = [(re.compile(r"/home/[A-Za-z0-9_.-]+"), "/home/user"), (re.compile(r"[A-Za-z]:\\Users\\[^\\\"]+"), r"C:\\Users\\user")]
 HOST_FIELDS = ("host",)
@@ -111,6 +111,8 @@ def main():
     ap.add_argument("--index", help="lab index episodes.csv (default: <last part>/index/episodes.csv)")
     ap.add_argument("--version", default="1.0")
     ap.add_argument("--no-archives", action="store_true", help="tables only (fast)")
+    ap.add_argument("--exclude-services", nargs="*", default=[], help="names left out of service_labels (infrastructure, duplicate span names); raw files keep them")
+    ap.add_argument("--contaminated", help="JSON file with {'episodes': [...]}: kept in the tables but not usable")
     ap.add_argument("parts", nargs="+", help="name=folder")
     a = ap.parse_args()
     out = os.path.expanduser(a.out)
@@ -123,6 +125,7 @@ def main():
     if os.path.exists(idx_path):
         index = {r["episode_id"]: r for r in csv.DictReader(open(idx_path))}
     report, counter = [], Counter()
+    contaminated = set(json.load(open(a.contaminated))["episodes"]) if a.contaminated else set()
 
     eps, svc, flows = [], [], []
     for part, root in parts:
@@ -135,10 +138,12 @@ def main():
             m, lab = rows_for_episode(d, part, ep)
             ix = index.get(ep, {})
             pm = PLAN_RE.match(ep)
-            row = {"episode_id": ep, "part": part, "kind": kind, "plan": pm["plan"] if pm else "", "block": int(pm["block"]) if pm else "",
+            system = "online-boutique" if "boutique" in ep else "train-ticket"
+            row = {"episode_id": ep, "part": part, "system": system, "kind": kind, "plan": pm["plan"] if pm else "", "block": int(pm["block"]) if pm else "",
                    "position": int(pm["pos"]) if pm else "", "is_repeat": int(bool(pm and pm["redo"])),
                    "status": m.get("status"), "discard_reason": m.get("discard_reason") or "",
-                   "usable": ix.get("usable", "1" if m.get("status") == "ok" else "0"),
+                   "usable": "0" if ep in contaminated else ix.get("usable", "1" if m.get("status") == "ok" else "0"),
+                   "contaminated": int(ep in contaminated),
                    "fault": m.get("fault_type"), "fault_level": m.get("fault_param"), "fault_target": m.get("fault_target") or "",
                    "action": m.get("action_type"), "action_target": m.get("action_target") or "",
                    "action_on_fault_target": int(bool(m.get("action_on_fault_target"))),
@@ -152,8 +157,10 @@ def main():
                            user_damage_abs1000_pts=s.get("user_damage_abs1000"), collateral_harmed=s.get("collateral_harmed"),
                            collateral_mean_sum_pts=s.get("collateral_mean_sum"), collateral_peak_sum_pts=s.get("collateral_peak_sum"))
                 for sv, v in lab["services"].items():
+                    if sv in a.exclude_services:
+                        continue
                     ab = v.get("abs", {})
-                    svc.append({"episode_id": ep, "part": part, "kind": kind, "service": sv, "is_action_target": int(sv == lab.get("action_target")),
+                    svc.append({"episode_id": ep, "part": part, "system": system, "kind": kind, "service": sv, "is_action_target": int(sv == lab.get("action_target")),
                                 "is_fault_target": int(sv == lab.get("fault_target")), "verdict": v.get("verdict"),
                                 "n_before": v.get("N_B1L"), "bad_before": v.get("X_B1L"), "n_after": v.get("N_M"), "bad_after": v.get("X_M"),
                                 "p_before": v.get("p_B1L"), "p_after": v.get("p_M"),
@@ -175,7 +182,15 @@ def main():
         if r["kind"] != "campaign" or str(r["usable"]) != "1":
             continue
         part, blk = r["part"], r["block"] if r["block"] != "" else 0
-        s = {"episode_id": r["episode_id"], "part": part}
+        s = {"episode_id": r["episode_id"], "part": part, "system": r["system"]}
+        if r["system"] == "online-boutique":
+            s.update(in_system="", unseen_system="", unseen_fault="", held_out_faults="", higher_load="", noise_ceiling="", wide2_first_half=0)
+            s["in_system_boutique"] = "test" if blk % 5 == 0 else "train"
+            s["train_tt_test_boutique"], s["train_boutique_test_tt"] = "test", "train"
+            splits.append(s)
+            continue
+        s["in_system_boutique"] = ""
+        s["train_tt_test_boutique"], s["train_boutique_test_tt"] = "train", "test"
         s["in_system"] = ("test" if blk % 5 == 0 else "train") if part in ("batch1", "wide1", "wide1db", "wide2", "held") else ""
         s["unseen_system"] = "train" if part == "batch1" else "test" if part == "wide1" else ""
         s["unseen_fault"] = "train" if part == "wide1" else "test" if part == "wide1db" else ""
@@ -228,7 +243,7 @@ def main():
         for fn in sorted(os.listdir(d)):
             if fn != "SHA256SUMS.txt" and os.path.isfile(os.path.join(d, fn)):
                 sums.append(f"{sha256(os.path.join(d, fn))}  {fn}")
-        open(os.path.join(d, "SHA256SUMS.txt"), "w").write("\n".join(sums) + "\n")
+        open(os.path.join(d, "SHA256SUMS.txt"), "w", newline="\n").write("\n".join(sums) + "\n")
     open(os.path.join(out, "build-report.txt"), "w").write("\n".join(report) + "\n")
     print("\n".join(report))
 

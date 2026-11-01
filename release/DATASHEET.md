@@ -1,4 +1,4 @@
-# Datasheet: ARC dataset v1.0
+# Datasheet: ARC dataset v1.1 (v1.0 plus Online Boutique)
 
 Following "Datasheets for Datasets" (Gebru et al.). Numbers come from the released tables and the project's decision log
 (`docs/research/09-decision-log.md`) and findings (`docs/research/08-lab-machine-findings.md`) in the code repository.
@@ -16,7 +16,7 @@ Information Technology, Chaitanya Bharathi Institute of Technology (Autonomous),
 
 **What is an instance?** One episode: a controlled incident on a running system. A fault is injected, 60 to 300 s later one
 remediation action is applied, and everything is recorded for 60 s before and 180 s after the action.
-**How many?** 1,795 campaign episodes in six parts, plus 80 calibration episodes (healthy, no-op; used only to set latency bars) and
+**How many?** Train Ticket (parts of v1.0): 1,795 campaign episodes in six parts (Online Boutique, added in v1.1, is described in section 6b), plus 80 calibration episodes (healthy, no-op; used only to set latency bars) and
 one unusable episode kept for completeness.
 
 | Part | Episodes | System | Load | Faults |
@@ -61,7 +61,7 @@ Raw files are exactly what the exporter wrote, except that the machine's host na
 
 **Intended.** Training and testing models that predict per-service damage of a remediation action; ranking and gating actions;
 blast-radius explanation; benchmarking against simple baselines (included in the code repository).
-**Not suitable for.** Claims about other applications or hardware without testing there (one system, one machine, one copy of each service);
+**Not suitable for.** Claims about other applications or hardware without testing there (two systems, one machine, one copy of each service);
 using a fault level as a measure of severity (levels were dosed on this machine); detecting damage shorter than a few tens of seconds
 (the label averages over 180 s; the raw requests keep short bursts).
 
@@ -79,12 +79,36 @@ using a fault level as a measure of severity (levels were dosed on this machine)
 6. **Drain** removes the target from the registry, so services that only the drained service called receive no requests and drop out of scoring.
 7. **Pod-kill** often self-recovers before the action, which makes later actions look harmless.
 
+## 6b. Online Boutique (added in v1.1)
+
+**What.** A second application, Google's Online Boutique (11 services and a Redis cache), recorded with the same harness and the
+same labelling code as Train Ticket. 280 usable campaign episodes (40 blocks of 7: eight fault conditions, one episode per action, no-op twice),
+40 healthy calibration episodes, and 8 campaign episodes that are kept but not usable (3 discarded: two failed drains and one fault that could not be
+verified; 5 `contaminated`, see below). Load 8 requests per second.
+**Composition.** Faults: none 35, pod-kill 35, hung pod 35, CPU squeeze 35, network delay 70 (10 and 25 ms), packet loss 70 (5 and 15%). Actions: no-op 80,
+and 40 each of restart-pod, rollout-restart, scale-up, cpu-bump, drain. 2,800 labelled service rows, 2,726 scored; about 1.08 million recorded
+user requests; 59 saturated episodes (37 from network delay, 21 hung pod, 1 packet loss).
+**Labelled services.** 10: adservice, cartservice, checkoutservice, currencyservice, emailservice, frontend, paymentservice, productcatalogservice,
+recommendationservice, shippingservice. The ad, cart and shipping services are labelled from the callers' edge counters. The lab's label files also
+contain `otel-collector` (monitoring infrastructure) and a duplicate span name `hipstershop.ProductCatalogService`; they are not in `service_labels.csv.gz`
+but remain in the raw files. The episode-level `collateral_*` columns of Boutique episodes come from the lab's label files and may include `otel-collector`.
+**When.** 27 to 31 October 2026, on the same machine as Train Ticket.
+**Contaminated episodes.** A CPU squeeze that was followed by a scale-up left the payment service throttled; five episodes
+(`ep_main_boutique_b028_7`, `b029_1` to `b029_4`) were recorded under that fault. They stay in the tables (`contaminated` = 1, `usable` = 0) and
+were re-run as `ep_rerun_boutique_*` (`plan` = rerun) after the harness was fixed. Two further harness faults (a failed drain that left its network
+partition behind, and this CPU limit) were found by the campaign's stop rules and are described in the decision log of the code repository.
+**Validity.** The four tests of the paper (negative control, dose-response, two instruments, mechanism) were repeated on the Boutique data and
+gave the same answers as on Train Ticket; restarts show almost no damage because a restart lasts about 10 s against a 180 s label.
+**Known issues specific to Boutique.** 21% of episodes are saturated before the action, all but one from network delay or a hung pod; service counters read
+lower than the load generator's log when damage is large (drain 28.4 against 44.4 points); about 9% of services unrelated to a drain's target
+receive a harm verdict, possibly through dependencies missing from the edge list; the no-fault no-op control has 10 episodes.
+
 ## 7. Distribution
 
 Zenodo (archive with DOI; raw archives, tables, documents) and Hugging Face (tables, documents, loader). Licence: CC BY 4.0 for the data,
-MIT for the code. Version 1.0; later versions will add a second application (Online Boutique) as v1.1 without changing v1.0.
+MIT for the code. Version 1.1 (Train Ticket unchanged from v1.0, plus Online Boutique); v1.0 is never edited in place.
 
 ## 8. Maintenance
 
 Maintainer: Laksh Jain (https://github.com/lakshjain7). Issues: https://github.com/lakshjain7/arc-testbed/issues. Corrections will be released
-as new versions; v1.0 is never edited in place.
+as new versions; published versions are never edited in place.

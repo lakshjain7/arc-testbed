@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this dataset, please cite it as below."
-title: "ARC dataset v1.0: per-service damage of remediation actions in a microservice system"
-version: "1.0.0"
+title: "ARC dataset v1.1: per-service damage of remediation actions in two microservice systems"
+version: "1.1.0"
 date-released: "2026-10-31"   # set to the publication date
 license: CC-BY-4.0
 repository-code: "https://github.com/lakshjain7/arc-testbed"

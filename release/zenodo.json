@@ -1,20 +1,46 @@
 {
-  "title": "ARC dataset v1.0: per-service damage of remediation actions in a microservice system",
+  "title": "ARC dataset v1.1: per-service damage of remediation actions in two microservice systems",
   "upload_type": "dataset",
-  "version": "1.0.0",
-  "publication_date": "2026-10-31",
-  "description": "1,795 controlled incidents on the Train Ticket microservice system (20 to 25 services, Kubernetes, Chaos Mesh faults). In each, one remediation action (no-op, restart-pod, rollout-restart, scale-up, cpu-bump, drain) is applied and the damage to every service is measured as the rise of its share of bad requests. Raw telemetry (per-service time series, call graph, exact counters, every user request), labels at three latency bars, six evaluation splits, calibration, a loader and a datasheet. Known issues (saturation, one system, one machine) are listed in DATASHEET.md.",
+  "version": "1.1.0",
+  "description": "2,075 controlled incidents on two open-source microservice systems, Train Ticket (1,795 episodes, 20 to 25 services) and Online Boutique (280 episodes, 11 services), on Kubernetes with Chaos Mesh faults. In each, one remediation action (no-op, restart-pod, rollout-restart, scale-up, cpu-bump, drain) is applied and the damage to every service is measured as the rise of its share of bad requests. Raw telemetry (per-service time series, call graph, exact counters, every user request), labels at three latency bars, nine evaluation splits, calibration, a loader and a datasheet. Known issues (saturation, one machine, short bursts) are listed in DATASHEET.md.",
   "creators": [
-    {"name": "Jain, Laksh", "affiliation": "Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"},
-    {"name": "Singh, Abhishek Kumar", "affiliation": "Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"},
-    {"name": "Choudhary, Yogesh", "affiliation": "Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"},
-    {"name": "Kolikipogu, Ramakrishna", "affiliation": "Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"}
+    {
+      "name": "Jain, Laksh",
+      "affiliation": "Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"
+    },
+    {
+      "name": "Singh, Abhishek Kumar",
+      "affiliation": "Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"
+    },
+    {
+      "name": "Choudhary, Yogesh",
+      "affiliation": "Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"
+    },
+    {
+      "name": "Kolikipogu, Ramakrishna",
+      "affiliation": "Chaitanya Bharathi Institute of Technology (Autonomous), Hyderabad"
+    }
   ],
   "license": "cc-by-4.0",
-  "access_right": "open",
-  "keywords": ["microservices", "remediation", "blast radius", "fault injection", "AIOps", "benchmark", "Kubernetes", "Train Ticket"],
-  "related_identifiers": [
-    {"identifier": "https://github.com/lakshjain7/arc-testbed", "relation": "isSupplementedBy", "resource_type": "software"}
+  "access_right": "restricted",
+  "keywords": [
+    "microservices",
+    "remediation",
+    "blast radius",
+    "fault injection",
+    "AIOps",
+    "benchmark",
+    "Kubernetes",
+    "Train Ticket",
+    "Online Boutique"
   ],
-  "language": "eng"
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/lakshjain7/arc-testbed",
+      "relation": "isSupplementedBy",
+      "resource_type": "software"
+    }
+  ],
+  "language": "eng",
+  "access_conditions": "Private access link for the reviewers of the MSR 2027 Data and Tool Showcase submission; opened to the public after acceptance."
 }

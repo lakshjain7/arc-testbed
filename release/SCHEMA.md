@@ -1,4 +1,4 @@
-# Schema of the ARC dataset v1.0
+# Schema of the ARC dataset v1.1
 
 All tables are gzip-compressed CSV with a header row. Empty cell = not applicable or not measured. "Points" = percentage points
 of bad-request share (a rise from 2% to 5% is 3 points). A request is bad if it failed or was slower than a latency bar.
@@ -8,9 +8,11 @@ of bad-request share (a rise from 2% to 5% is 3 points). A request is bad if it 
 | Column | Meaning |
 |---|---|
 | episode_id | `ep_<plan>_<cluster>_b<block>_<position>`; a trailing `_r` is a repeat of a discarded episode |
-| part | batch1, wide1, wide1db, wide2, reptest, held |
+| part | batch1, wide1, wide1db, wide2, reptest, held (Train Ticket); boutique (Online Boutique) |
+| system | `train-ticket` or `online-boutique` (present in every table; added in v1.1, v1.0 rows are all `train-ticket`) |
+| contaminated | 1 for the five Online Boutique episodes affected by a leftover CPU limit (kept, `usable` = 0); 0 otherwise |
 | kind | `campaign` (benchmark data), `calibration` (healthy no-op episodes for the latency bars), `other` |
-| plan, block, position | the plan it belongs to; a block is 7 episodes of one fault condition (one per action, no-op twice) |
+| plan, block, position | the plan it belongs to (`rerun` = the five Boutique slots re-run after the leftover-limit fault; their block and position are those of the slot they replace); a block is 7 episodes of one fault condition (one per action, no-op twice) |
 | status, discard_reason, usable | `usable` = 1 for episodes in the benchmark |
 | fault, fault_level, fault_target | fault type; its level (network delay: ms, packet loss: percent, CPU squeeze: limit as multiple of recent use, load surge: multiple of the load, call-cut: callee); target service |
 | action, action_target | one of noop, restart-pod, rollout-restart, scale-up, cpu-bump, drain; target service |
@@ -28,7 +30,7 @@ of bad-request share (a rise from 2% to 5% is 3 points). A request is bad if it 
 
 | Column | Meaning |
 |---|---|
-| episode_id, part, kind, service | `part` and `kind` as in `episodes.csv.gz` (benchmark rows are `kind` = campaign); service names keep Train Ticket's `ts-` prefix |
+| episode_id, part, kind, service | `part` and `kind` as in `episodes.csv.gz` (benchmark rows are `kind` = campaign); Train Ticket service names keep the `ts-` prefix; Online Boutique has 10 labelled services (adservice, cartservice, checkoutservice, currencyservice, emailservice, frontend, paymentservice, productcatalogservice, recommendationservice, shippingservice), of which ad, cart and shipping are labelled from their callers' edge counters. `otel-collector` and a duplicate span name were left out of this table; the raw files keep them |
 | is_action_target, is_fault_target | 1 if this service is the target |
 | verdict | `harm`, `no_harm`, `inconclusive` (too few requests or a change within noise), `no_data` |
 | n_before, bad_before, p_before | requests, bad requests and bad share in the 60 s before the action (B1L) |
@@ -48,7 +50,7 @@ Rows with fewer than 30 requests before or after are not scored in the paper (`a
 flow (search, search2, orders, orders2, book, book2, pay, cancel, collect), n_before, n_after, p_before, p_after, y_mean, bar_ms (the
 flow's calibrated bar), y_mean_500, y_mean_1000: what users of that flow saw.
 
-## splits.csv.gz (campaign episodes only)
+## splits.csv.gz (usable campaign episodes only)
 
 One column per protocol; the value is `train`, `test`, `repeat` or empty (not used in that protocol).
 
@@ -61,8 +63,13 @@ One column per protocol; the value is `train`, `test`, `repeat` or empty (not us
 | higher_load | train on the 4 req/s parts, test on wide2 (8 req/s) |
 | noise_ceiling | reptest: the same incident repeated 5 times; use it to measure the floor on any error |
 | wide2_first_half | 1 for wide2 blocks 1 to 24 (before the cancel-flow drift) |
+| in_system_boutique | Online Boutique only: every 5th block (`block % 5 == 0`) is test |
+| train_tt_test_boutique | train on every usable Train Ticket campaign episode, test on every usable Boutique campaign episode |
+| train_boutique_test_tt | the reverse |
 
-## Raw files (inside `arc-raw-<part>-v1.0.tar.gz`, folder `<part>/raw/<episode_id>/`)
+Column `system` is also in this table. Saturated episodes are not removed from any split (use `saturated_before_action`).
+
+## Raw files (inside `arc-raw-<part>-v1.0.tar.gz` and `arc-raw-boutique-v1.1.tar.gz`, folder `<part>/raw/<episode_id>/`)
 
 | File | Content |
 |---|---|
