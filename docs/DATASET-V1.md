@@ -49,13 +49,26 @@ The raw per-request and per-step data are included, so any other label can be re
    from 77 to 131 ms during wide2 (and from 25 to 56 ms during wide1, which stayed under the 100 ms bar, so wide1's labels are unaffected). Relative labels of wide2 after 23 Oct 20:00 UTC are inflated
    for the cancel flow and its path (per-episode drift list: `wide2-cancel-b0.csv`). Use the 1 s bar labels for wide2, or the first half.
 3. **wide2 was labelled with a calibration fitted on the drifted database (F22).** calibration-wide-8c (clean) replaces it from reptest on.
+   Correction from the independent audit (lab, 1 Nov): the `labels_v2.json` files stored in the reptest and held raw folders were written with
+   calibration-wide-8, not 8c (8c did not exist until 25 Oct); no episode records which calibration labelled it. The tables used for the
+   reported results (`dataset_rep_8c.jsonl`, held) were rebuilt with 8c from the raw data. The release must therefore be built from the raw
+   data with an explicit calibration per plan (provenance table in the release), not copied from the stored `labels_v2.json`.
+   The same audit relabelled 320 episodes on copies with the code of the time and the current code: 320 of 320 identical.
 4. **Prometheus was killed 35 times during wide1 (F19);** 4 of 504 episodes lost; use the index, not the folder list.
+   The audit confirmed it: 1,895 folders against 1,891 index rows; the 4 extras are failed exports without `meta.json` (b066_7, b070_1,
+   b070_4, b070_2_r). The release builder must skip them. No duplicates, no index row without a folder.
 5. **Hung-pod (pod-hang) episodes are all saturated** (the service answers nothing); they test blast-radius, not action ranking.
 6. **Only one replica per service in all episodes;** the number of copies and the age of the fault are not model inputs.
 7. **One machine, one system (Train Ticket), one fault injector (Chaos Mesh).** Fault levels were dosed on this machine (F5, F14, F20, F25);
    a level is not a severity.
 8. **HTTP-level fault injection did not attach (F25);** the shared-database-slow fault was a cliff with no usable level and was dropped.
-9. **Repeatability (F24, decision log 10h, 10i):** the same incident repeated gives a net effect within 12-27 % (coefficient of variation) for real actions;
+9. **Audit of randomisation, drift and shortcuts (lab, 1 Nov).** All 318 blocks are complete (5 actions once plus 2 no-ops); action is
+   independent of fault level, time and fault target (p = 1.00, 1.00, 0.975). Action vs position in the block gives p = 0.002 in one
+   stratified test among about 30; the generator is a plain uniform shuffle, so we read it as chance. Cancel-flow drift (>15 % over five time
+   slices): wide1 25 to 56 ms (+123 %), wide2 83 to 130 ms (+57 %), wide1db +14 %; batch 1 and reptest none. Wide1 stays under the 100 ms floor
+   (issue 2). Shortcuts: action type alone predicts episode user damage with MAE 39.6 against 69.2 for the global mean (R2 0.43), and service harm
+   with AUC 0.78 (bad_before 0.75, order 0.51), so action type is a strong trivial baseline: all models are reported against it (B1).
+10. **Repeatability (F24, decision log 10h, 10i):** the same incident repeated gives a net effect within 12-27 % (coefficient of variation) for real actions;
    `y_peak` of services with few requests is unreliable (spread up to 53 points between identical runs).
 
 ## Release (to decide by the user)
