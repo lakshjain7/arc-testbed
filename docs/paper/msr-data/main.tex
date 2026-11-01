@@ -45,7 +45,7 @@ This paper describes ARC, a dataset built to fill that gap. Its contributions ar
 The paper is a data descriptor; it makes no claim about a prediction method beyond the baseline use in Section~\ref{sec:uses}.
 
 \section{Data Collection}
-\textbf{Systems.} Train Ticket has 20--25 Java services behind one gateway. Online Boutique has 11 services plus a Redis cache; 10 are labelled, and for three of them (ad, cart, shipping) labels are derived from the callers' edge counters because the service itself is not instrumented. Both run on one Kubernetes cluster (kind, v1.34) on a single workstation. Faults are injected with Chaos Mesh~\cite{chaosmesh}; traces and metrics come from OpenTelemetry into Prometheus at 5~s resolution, with cAdvisor and kube-state-metrics for resources.
+\textbf{Systems.} Train Ticket has 20--25 Java services behind one gateway. Online Boutique has 11 services plus a Redis cache; 10 are labelled, and for three of them (ad, cart, shipping) labels are derived from the callers' edge counters because the service itself is not instrumented. Both run on one Kubernetes cluster (kind, v1.34) on a single workstation (Intel Core i9-13900, 20 cores, 32~GB RAM). Faults are injected with Chaos Mesh~\cite{chaosmesh}; traces and metrics come from OpenTelemetry into Prometheus at 5~s resolution, with cAdvisor and kube-state-metrics for resources.
 
 \textbf{Load.} An open-loop load generator (Poisson arrivals, nine user flows on Train Ticket; the shop's flows on Boutique) keeps the offered load constant even when the system slows. Load is 4 or 8 requests/s (Boutique: 8). Between episodes the database is trimmed so the healthy baseline does not drift.
 
@@ -182,6 +182,9 @@ RCAEval~\cite{rcaeval} and the fault-propagation benchmark of Fang et al.~\cite{
 
 \section{Conclusion}
 ARC records what six repair actions do to every service of two microservice systems, with raw telemetry, labels that passed four validity tests, and a list of known limits. We hope it lets others train and compare models that predict the damage of a repair before it is applied.
+
+\section*{Acknowledgment}
+The authors thank the Research and Entrepreneurship (RNE) Lab at Chaitanya Bharathi Institute of Technology for providing the lab system on which all episodes were recorded.
 
 \begin{thebibliography}{99}
 \bibitem{dai} C. Dai et al., ``Safe Remediation as Risk-Constrained Intervention Decision in Microservice Systems,'' arXiv:2607.20005, 2026.
