@@ -175,7 +175,7 @@ The datasheet lists every known issue; the ones that change how the data should 
 (5)~\textbf{Splits provided for known issues.} A first-half split of Train Ticket part wide2 avoids a drift in one flow; episodes affected by harness faults are listed in the release and excluded from the usable set.
 
 \section{Availability}
-The data is on Zenodo (archive with DOI \todo{reserve DOI; insert}) and Hugging Face (tables and loader), under CC BY 4.0. The testbed code, plans and label scripts are at \url{https://github.com/lakshjain7/arc-testbed} under MIT and are archived with the release (\todo{code release DOI}). Each part has a manifest and SHA-256 checksums; the datasheet, schema and a loader are included. Version 1.0 contains Train Ticket; version 1.1 adds Online Boutique and never edits v1.0 in place. \todo{review copy: private Zenodo link for reviewers}
+\textbf{Data availability statement.} All data described here is shared, with no restriction; nothing was withheld for ethical or legal reasons. The data is on Zenodo (archive with DOI \todo{reserve DOI; insert}) and Hugging Face (tables and loader), under CC BY 4.0. The testbed code, plans and label scripts are at \url{https://github.com/lakshjain7/arc-testbed} under MIT and are archived with the release (\todo{code release DOI}). Each part has a manifest and SHA-256 checksums; the datasheet, schema, a \texttt{CITATION.cff} file and a loader are included. The loader needs only Python~3 and its standard library (pandas is optional), so no requirements file is needed. Version 1.0 contains Train Ticket; version 1.1 adds Online Boutique and never edits v1.0 in place. \todo{review copy: private Zenodo link for reviewers}
 
 \section{Related Datasets}
 RCAEval~\cite{rcaeval} and the fault-propagation benchmark of Fang et al.~\cite{fang} provide telemetry for root-cause analysis; they have no repair action. MicroRemed~\cite{microremed} and the recovery-aware evaluation of Qi et al.~\cite{r7} test whether models propose a correct remediation; Dai et al.~\cite{dai} label each decision as resolved, partial or false remediation, which is the closest work but gives no per-service damage. AIOpsLab~\cite{aiopslab} and SREGym~\cite{sregym} offer live environments for agents. ARC adds the per-service consequence of the action, with raw data from which other labels can be recomputed.
@@ -186,6 +186,8 @@ ARC records what six repair actions do to every service of two microservice syst
 \section*{Acknowledgment}
 The authors thank the Research and Entrepreneurship (RNE) Lab at Chaitanya Bharathi Institute of Technology for providing the lab system on which all episodes were recorded.
 
+\textbf{Use of generative AI.} The first draft of the text of this paper, and parts of the analysis scripts behind its tables, were produced with the assistance of Claude Sonnet~5.5~\cite{claude}, an AI assistant from Anthropic. The authors reviewed, checked and edited all text and numbers against the released data and take full responsibility for the content.
+
 \begin{thebibliography}{99}
 \bibitem{dai} C. Dai et al., ``Safe Remediation as Risk-Constrained Intervention Decision in Microservice Systems,'' arXiv:2607.20005, 2026.
 \bibitem{guarded} W. Cai et al., ``Can AI Remediate Backend Failures Safely? GuardedAct with Blast-Radius-Aware Sandboxing,'' arXiv:2609.11264, 2026.
@@ -194,10 +196,11 @@ The authors thank the Research and Entrepreneurship (RNE) Lab at Chaitanya Bhara
 \bibitem{aiopslab} Y. Chen et al., ``AIOpsLab: A Holistic Framework to Evaluate AI Agents for Enabling Autonomous Clouds,'' arXiv:2501.06706, 2025.
 \bibitem{sregym} J. Clark et al., ``SREGym: A Live Benchmark for AI SRE Agents with High-Fidelity Failure Scenarios,'' arXiv:2605.07161, 2026.
 \bibitem{rcaeval} L. Pham et al., ``RCAEval: A Benchmark for Root Cause Analysis of Microservice Systems with Telemetry Data,'' arXiv:2412.17015, 2024.
-\bibitem{fang} A. Fang et al., ``Rethinking the Evaluation of Microservice RCA with a Fault Propagation-Aware Benchmark,'' FSE 2026. arXiv:2510.04711.
+\bibitem{fang} A. Fang et al., ``Rethinking the Evaluation of Microservice RCA with a Fault Propagation-Aware Benchmark,'' arXiv:2510.04711, 2025.
 \bibitem{trainticket} X. Zhou et al., ``Fault Analysis and Debugging of Microservice Systems: Industrial Survey, Benchmark System, and Empirical Study,'' IEEE Trans. Softw. Eng., vol. 47, no. 2, pp. 243--260, 2021.
 \bibitem{boutique} Google Cloud Platform, ``Online Boutique (microservices-demo),'' \url{https://github.com/GoogleCloudPlatform/microservices-demo}.
 \bibitem{chaosmesh} Chaos Mesh, a cloud-native chaos engineering platform for Kubernetes, \url{https://chaos-mesh.org}.
+\bibitem{claude} Anthropic, ``Claude Sonnet 5.5'' (AI assistant, model ID claude-sonnet-5-5), 2026.
 \bibitem{gebru} T. Gebru et al., ``Datasheets for Datasets,'' Commun. ACM, vol. 64, no. 12, pp. 86--92, 2021.
 \end{thebibliography}
 
