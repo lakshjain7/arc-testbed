@@ -174,6 +174,16 @@ def main(args):
                     p = model(X, s_, d_)
                     fd.write(json.dumps({"model": "ARC", "seed": seed, "episode_id": e["episode_id"], "plan": e["plan"], "block": e["block"],
                                          "err": float(((p - Y).abs() * M).sum()), "n": int(M.sum())}) + "\n")
+        if "--dump-pred" in args:   # per-service true and predicted damage of this seed (signed, for bias by action / role / service)
+            with open(args[args.index("--dump-pred") + 1], "a") as fd, torch.no_grad():
+                for e in test:
+                    X, Y, M, s_, d_ = D[id(e)]
+                    p = model(X, s_, d_)
+                    rl = roles(e)
+                    for i, nd in enumerate(e["nodes"]):
+                        if M[i] > 0:
+                            fd.write(json.dumps({"seed": seed, "episode_id": e["episode_id"], "service": nd["service"], "role": rl[nd["service"]],
+                                                 "action": e["action"]["type"], "y": float(Y[i]), "p": float(p[i])}) + "\n")
         print(f"  seed {seed}: stopped at epoch {ep_i + 1}, validation MAE {best:.2f} -> test MAE {r[0]:.2f}, Spearman {r[1]:.3f}, top-1 {r[2]:.2f}", flush=True)
     # yes/no view, comparable with B7: harmed = damage >= 10 points; ARC predicts harmed when its predicted
     # damage is >= 10 points (last seed's model)
