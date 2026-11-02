@@ -25,7 +25,7 @@ Corresponding author: elitelaksh7@gmail.com \;\; \todo{confirm affiliations, ema
 \maketitle
 
 \begin{abstract}
-When a microservice system breaks, an operator or an automated agent applies a repair such as a restart, a scale-up or a drain. The repair can hurt services that were healthy, but no public dataset records how much. We present ARC, a dataset of 2{,}075 controlled incidents on two open-source systems (Train Ticket and Online Boutique) in which one of six remediation actions is applied after a fault and the damage to every service is measured. Each episode keeps the raw telemetry (per-service time series, call-graph edges, exact request and latency counters, the load generator's own request log, Kubernetes events) for 60~s before and 180~s after the action, and a per-service label: the rise in the share of bad requests. We describe how the data was collected, the files and labels, six evaluation splits, and four validity tests of the labels on both systems (negative control, dose--response, two independent instruments, and damage following the call graph). We also state the known limits: about 21\% of episodes are already saturated before the action, and the damage label averages over 180~s. The data is under CC BY 4.0 and the code under MIT.
+When a microservice system breaks, an operator or an automated agent applies a repair such as a restart, a scale-up or a drain. The repair can hurt services that were healthy, but no public dataset records how much. We present ARC, a dataset of 2{,}075 controlled incidents on two open-source systems (Train Ticket and Online Boutique) in which one of six remediation actions is applied after a fault and the damage to every service is measured. Each episode keeps the raw telemetry (per-service time series, call-graph edges, exact request and latency counters, the load generator's own request log, Kubernetes events) for 60~s before and 180~s after the action, and a per-service label: the rise in the share of bad requests. We describe how the data was collected, the files and labels, nine evaluation splits, and four validity tests of the labels on both systems (negative control, dose--response, two independent instruments, and damage following the call graph). We also state the known limits: about 21\% of episodes are already saturated before the action, and the damage label averages over 180~s. The data is under CC BY 4.0 and the code under MIT.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -40,7 +40,7 @@ This paper describes ARC, a dataset built to fill that gap. Its contributions ar
 \item \textbf{Data.} 2{,}075 campaign episodes (1{,}795 on Train Ticket~\cite{trainticket}, 280 on Online Boutique~\cite{boutique}) with six actions and eight fault types plus no-fault, 120 healthy calibration episodes, and about 5.8 million recorded user requests.
 \item \textbf{Labels with a stated meaning.} A per-service damage value for every episode, recomputable from raw counters with three latency bars.
 \item \textbf{Validity evidence.} Four tests of the labels on both systems, since there is no external ground truth to compare with (Section~\ref{sec:valid}).
-\item \textbf{Splits and loader} for six evaluation protocols, and a datasheet~\cite{gebru} that lists known issues.
+\item \textbf{Splits and loader} for nine evaluation protocols, and a datasheet~\cite{gebru} that lists known issues.
 \end{itemize}
 The paper is a data descriptor; it makes no claim about a prediction method beyond the baseline use in Section~\ref{sec:uses}.
 
@@ -120,7 +120,7 @@ cpu-bump & 293 & CPU squeeze & 96 \\
 
 \textbf{Size.} Train Ticket: 37{,}790 labelled (episode, service) rows, 28{,}769 scored, 4{,}696{,}050 requests. Boutique: 2{,}800 rows, 2{,}726 scored, about 1.08 million requests. The raw archives are about 1~GB compressed.
 
-\textbf{Files.} \texttt{episodes} (one row per episode: fault, action, load, saturation flag), \texttt{service\_labels}, \texttt{client\_flows}, \texttt{splits}, per-part raw archives (\texttt{services}, \texttt{edges}, \texttt{op\_counters}, \texttt{client}, \texttt{events}, \texttt{labels\_v2}, \texttt{meta}), a standard-library loader and a schema document. The six official splits are in-system, unseen system, unseen fault, held-out faults (call-cut, load surge), higher load and a noise ceiling from repeated identical incidents.
+\textbf{Files.} \texttt{episodes} (one row per episode: fault, action, load, saturation flag), \texttt{service\_labels}, \texttt{client\_flows}, \texttt{splits}, per-part raw archives (\texttt{services}, \texttt{edges}, \texttt{op\_counters}, \texttt{client}, \texttt{events}, \texttt{labels\_v2}, \texttt{meta}), a standard-library loader and a schema document. The nine official splits are in-system, unseen system, unseen fault, held-out faults (call-cut, load surge), higher load and a noise ceiling from repeated identical incidents on Train Ticket, and three that use both systems (train on Train Ticket and test on Boutique, the reverse, and in-system Boutique).
 
 \textbf{Running example.} The loader uses only the standard library (pandas optional):
 \begin{footnotesize}
@@ -128,13 +128,12 @@ cpu-bump & 293 & CPU squeeze & 96 \\
 import arc_data as arc
 labels = arc.load_service_labels()
 split  = arc.load_splits()
-train  = [s["episode_id"] for s in split
-          if s["unseen_system"] == "train"]
-rows = [r for r in labels
-        if r["episode_id"] in set(train)]
+test = set(arc.episode_ids(
+    "train_tt_test_boutique", "test"))
+rows = arc.scored([r for r in labels
+    if r["episode_id"] in test])
 \end{verbatim}
 \end{footnotesize}
-\todo{extend loader and splits to cover the Boutique part before release}
 
 \textbf{Privacy.} The users are a script with one test account; no personal data is involved. Host names and user paths were removed from the released JSON files.
 
@@ -175,7 +174,7 @@ The datasheet lists every known issue; the ones that change how the data should 
 (5)~\textbf{Splits provided for known issues.} A first-half split of Train Ticket part wide2 avoids a drift in one flow; episodes affected by harness faults are listed in the release and excluded from the usable set.
 
 \section{Availability}
-\textbf{Data availability statement.} All data described here is shared, with no restriction; nothing was withheld for ethical or legal reasons. The data is on Zenodo (archive with DOI \todo{reserve DOI; insert}) and Hugging Face (tables and loader), under CC BY 4.0. The testbed code, plans and label scripts are at \url{https://github.com/lakshjain7/arc-testbed} under MIT and are archived with the release (\todo{code release DOI}). Each part has a manifest and SHA-256 checksums; the datasheet, schema, a \texttt{CITATION.cff} file and a loader are included. The loader needs only Python~3 and its standard library (pandas is optional), so no requirements file is needed. Version 1.0 contains Train Ticket; version 1.1 adds Online Boutique and never edits v1.0 in place. \todo{review copy: private Zenodo link for reviewers}
+\textbf{Data availability statement.} All data described here is shared, with no restriction; nothing was withheld for ethical or legal reasons. The data is on Zenodo (archive with DOI \todo{reserve DOI; insert}) and Hugging Face (tables and loader), under CC BY 4.0. The testbed code, plans and label scripts are at \url{https://github.com/lakshjain7/arc-testbed} under MIT and are archived with the release (\todo{code release DOI}). Each part has a manifest and SHA-256 checksums; the datasheet, schema, a \texttt{CITATION.cff} file and a loader are included. The loader needs only Python~3 and its standard library (pandas is optional), so no requirements file is needed. The release is version 1.1: the Train Ticket data of an earlier internal version 1.0, unchanged, plus Online Boutique; published versions are never edited in place. \todo{review copy: private Zenodo link for reviewers}
 
 \section{Related Datasets}
 RCAEval~\cite{rcaeval} and the fault-propagation benchmark of Fang et al.~\cite{fang} provide telemetry for root-cause analysis; they have no repair action. MicroRemed~\cite{microremed} and the recovery-aware evaluation of Qi et al.~\cite{r7} test whether models propose a correct remediation; Dai et al.~\cite{dai} label each decision as resolved, partial or false remediation, which is the closest work but gives no per-service damage. AIOpsLab~\cite{aiopslab} and SREGym~\cite{sregym} offer live environments for agents. ARC adds the per-service consequence of the action, with raw data from which other labels can be recomputed.
