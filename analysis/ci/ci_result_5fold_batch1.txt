@@ -1,0 +1,16 @@
+701 episodes in 101 blocks; 10000 resamples of blocks
+
+model                     MAE   95% CI
+ARC                      1.97   [1.80, 2.14]
+B6 trees, no graph       4.44   [4.18, 4.72]
+B3 role + state          3.86   [3.67, 4.05]
+B1 action mean           9.25   [8.92, 9.59]
+B5 dependency map        6.73   [6.44, 7.05]
+B0 zero                  7.02   [6.58, 7.45]
+
+paired difference in MAE (model - ARC; positive = ARC better)
+B6 trees, no graph       2.47   [2.21, 2.74]
+B3 role + state          1.89   [1.75, 2.02]
+B1 action mean           7.28   [6.92, 7.64]
+B5 dependency map        4.76   [4.48, 5.06]
+B0 zero                  5.05   [4.59, 5.51]

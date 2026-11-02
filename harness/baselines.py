@@ -182,6 +182,7 @@ def main(args):
     }
     print(f"{path}: {len(train)} train / {len(test)} test episodes, target {key} (in points), services with >= {MIN_N} requests")
     print(f"  {'baseline':18s} {'MAE':>7s} {'Spearman':>9s} {'top-1 hit':>10s}   n services")
+    dump = open(args[args.index("--dump") + 1], "w") if "--dump" in args else None   # per-episode errors, for the block bootstrap
     for name, p in preds.items():
         err, rhos, hits, cnt, eps_n = 0.0, [], 0, 0, 0
         for ep in test:
@@ -189,6 +190,9 @@ def main(args):
             ys, ps = [], []
             for n, y in scored(ep, key):
                 v = p(ep, n, r); err += abs(v - y); cnt += 1; ys.append(y); ps.append(v)
+            if dump:
+                dump.write(json.dumps({"model": name, "episode_id": ep["episode_id"], "plan": ep["plan"], "block": ep["block"],
+                                       "err": sum(abs(a - b) for a, b in zip(ys, ps)), "n": len(ys)}) + "\n")
             if len(ys) >= 3:
                 rho = spearman(ps, ys)
                 if rho is not None:

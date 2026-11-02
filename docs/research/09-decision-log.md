@@ -584,3 +584,21 @@ as `*_r` and ok. The runner refilled the three skipped slots (b003_6, b014_3, b0
 and are listed in `release/contaminated_boutique.json`; they are kept and excluded. Decision: re-run those five slots as `ep_rerun_boutique_*`
 (extra plan `rerun5`, same fault/level/target/action/seed; b029_5 is already clean). They replace the contaminated ones in v1.1.
 Backup on the lab machine: arc-data-boutique-main-2026-10-31.tar.gz (75.5 MB, sha256 11f1e87b...b924c), verified there.
+
+### 10p. Block-bootstrap confidence intervals, 5-fold on batch 1 (2026-11-01)
+
+`--dump` added to `train_gnn.py` and `baselines.py` (per-episode error), `analysis/ci_bootstrap.py` resamples the 101 blocks (plan, block) 10,000 times;
+701 test episodes pooled over the 5 folds, ARC = 2 seeds per fold (mean per episode). Output: `analysis/ci/ci_result_5fold_batch1.txt`.
+
+| Model | MAE (points) | 95 % CI |
+|---|---|---|
+| ARC | 1.97 | 1.80 - 2.14 |
+| B6 trees | 4.44 | 4.18 - 4.72 |
+| B3 role + state | 3.86 | 3.67 - 4.05 |
+| B5 dependency map | 6.73 | 6.44 - 7.05 |
+| B1 action mean | 9.25 | 8.92 - 9.59 |
+| B0 zero | 7.02 | 6.58 - 7.45 |
+
+Paired difference (baseline - ARC): trees 2.47 [2.21, 2.74], rule 1.89 [1.75, 2.02], action mean 7.28 [6.92, 7.64]. Reproduces 10e (1.98). The CIs cover error only;
+Spearman, top-1 and ranking CIs, and CIs for the unseen-system / held-out / higher-load tests, are not computed yet.
+Held-out faults (written from `~/arc-held/analysis-held.log`, 27 Oct, training set A): ARC 7.57 against the role rule 7.51 and zero 9.21 - level, not better; 4x load surge 22.16.

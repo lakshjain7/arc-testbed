@@ -167,6 +167,13 @@ def main(args):
         model.load_state_dict(best_state)
         r = evaluate(model, test, [D[id(e)] for e in test], key)
         res.append(r)
+        if "--dump" in args:    # per-episode absolute error of this seed, for the block bootstrap (average the seeds afterwards)
+            with open(args[args.index("--dump") + 1], "a") as fd, torch.no_grad():
+                for e in test:
+                    X, Y, M, s_, d_ = D[id(e)]
+                    p = model(X, s_, d_)
+                    fd.write(json.dumps({"model": "ARC", "seed": seed, "episode_id": e["episode_id"], "plan": e["plan"], "block": e["block"],
+                                         "err": float(((p - Y).abs() * M).sum()), "n": int(M.sum())}) + "\n")
         print(f"  seed {seed}: stopped at epoch {ep_i + 1}, validation MAE {best:.2f} -> test MAE {r[0]:.2f}, Spearman {r[1]:.3f}, top-1 {r[2]:.2f}", flush=True)
     # yes/no view, comparable with B7: harmed = damage >= 10 points; ARC predicts harmed when its predicted
     # damage is >= 10 points (last seed's model)
